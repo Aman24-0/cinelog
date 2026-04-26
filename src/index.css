@@ -41,3 +41,8 @@ button, .glass-surface, .group, img, input, select { transition: all 0.3s cubic-
     animation: shimmer 1.5s infinite; 
 }
 @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Custom Glows & Tags */
+.glow-primary { filter: drop-shadow(0 0 8px var(--primary)); }
+.tag-chip { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+.rating-pill { background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 12px; display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 900; }
