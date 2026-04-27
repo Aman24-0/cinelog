@@ -6,12 +6,41 @@ import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, Sa
 export function DetailsModal(props) {
   const movie = createMemo(() => props.watchlist.find(m => String(m.id) === String(props.id)));
   const [details, setDetails] = createSignal({});
-  const [isEdit, setIsEdit] = createSignal(false); const [trailerKey, setTrailerKey] = createSignal(null); const [playTrailer, setPlayTrailer] = createSignal(false);
-  const [showPlayer, setShowPlayer] = createSignal(false); const [activeServer, setActiveServer] = createSignal('VidLink');
+  const [isEdit, setIsEdit] = createSignal(false); 
+  const [trailerKey, setTrailerKey] = createSignal(null); 
+  const [playTrailer, setPlayTrailer] = createSignal(false);
+  const [showPlayer, setShowPlayer] = createSignal(false); 
+  const [activeServer, setActiveServer] = createSignal('VidLink');
   const [omdbData, setOmdbData] = createSignal({ imdb: '-', rt: '-' });
   const [form, setForm] = createSignal({ status: '', rating: '', watchDate: '', notes: '', region: '', season: 1, episode: 1, tag: '', platforms: '', genres: '' });
   
-  onMount(() => { document.body.style.overflow = 'hidden'; }); onCleanup(() => { document.body.style.overflow = ''; });
+  // VidZee Event Listener for Player Progress
+  const handleVidZeeMessages = (event) => {
+    if (event.origin !== 'https://player.vidzee.wtf') return;
+    
+    // Save Media Data to LocalStorage
+    if (event.data?.type === 'MEDIA_DATA') {
+      const mediaData = event.data.data;
+      localStorage.setItem('vidZeeProgress', JSON.stringify(mediaData));
+    }
+    
+    // Log Player Events
+    if (event.data?.type === 'PLAYER_EVENT') {
+      const { event: eventType, currentTime, duration } = event.data.data;
+      console.log(`[VidZee] ${eventType} at ${currentTime}s / ${duration}s`);
+    }
+  };
+
+  onMount(() => { 
+      document.body.style.overflow = 'hidden'; 
+      window.addEventListener('message', handleVidZeeMessages);
+  }); 
+  
+  onCleanup(() => { 
+      document.body.style.overflow = ''; 
+      window.removeEventListener('message', handleVidZeeMessages);
+  });
+  
   const allAvailablePlatforms = createMemo(() => [...new Set(props.watchlist.flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort());
 
   createEffect(() => { 
@@ -40,7 +69,16 @@ export function DetailsModal(props) {
   const isCompleted = createMemo(() => movie()?.status === 'Completed');
   const progressPct = createMemo(() => isCompleted() ? 100 : Math.min(((movie()?.episode||0) / (movie()?.totalEps||1)) * 100, 100));
   const movieFranchises = createMemo(() => props.franchises?.filter(f => movie()?.franchises?.[f.id] !== undefined).map(f => f.name).join(', '));
-  const getStreamUrl = (server) => { const id = movie().id; const s = movie().season || 1; const e = movie().episode || 1; const pColor = 'b1a1ff'; if (server === 'VidLink') { return movie().media_type === 'tv' ? `https://vidlink.pro/tv/${id}/${s}/${e}?primaryColor=${pColor}&autoplay=false` : `https://vidlink.pro/movie/${id}?primaryColor=${pColor}&autoplay=false`; } return movie().media_type === 'tv' ? `https://vidsrc.me/embed/tv?tmdb=${id}&season=${s}&episode=${e}` : `https://vidsrc.me/embed/movie?tmdb=${id}`; };
+  
+  // Updated Stream URL to support VidZee
+  const getStreamUrl = (server) => { 
+      const id = movie().id; const s = movie().season || 1; const e = movie().episode || 1; const pColor = 'b1a1ff'; 
+      if (server === 'VidLink') { 
+          return movie().media_type === 'tv' ? `https://vidlink.pro/tv/${id}/${s}/${e}?primaryColor=${pColor}&autoplay=false` : `https://vidlink.pro/movie/${id}?primaryColor=${pColor}&autoplay=false`; 
+      } 
+      // Return VidZee link
+      return movie().media_type === 'tv' ? `https://player.vidzee.wtf/embed/tv/${id}/${s}/${e}` : `https://player.vidzee.wtf/embed/movie/${id}`; 
+  };
 
   return (
     <div class="fixed inset-0 z-[999999] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in" onClick={props.onClose}>
@@ -90,7 +128,9 @@ export function DetailsModal(props) {
                   <div class="animate-fade-in">
                     <div class="flex gap-2 mb-6">
                         <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveServer('VidLink'); setShowPlayer(true); }} class="flex-1 bg-[var(--primary)] text-[#0c0e14] font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[var(--primary)]/20"><Icon name="play_circle" fill class="text-[16px]"/> VidLink</button>
-                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveServer('Vidsrc'); setShowPlayer(true); }} class="flex-1 bg-[#10b981] text-[#0c0e14] font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#10b981]/20"><Icon name="backup" fill class="text-[16px]"/> Vidsrc</button>
+                        
+                        {/* VidZee Button */}
+                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveServer('VidZee'); setShowPlayer(true); }} class="flex-1 bg-[#10b981] text-[#0c0e14] font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#10b981]/20"><Icon name="smart_display" fill class="text-[16px]"/> VidZee</button>
                     </div>
 
                     <p class="text-gray-400 text-sm mb-6 leading-relaxed italic border-l-2 border-[var(--primary)]/30 pl-3">"{details().overview || (typeof movie().overview === 'string' ? movie().overview : 'No overview available.')}"</p>
@@ -166,6 +206,7 @@ export function DetailsModal(props) {
         </div>
       </Show>
 
+      {/* Fullscreen Player Modal */}
       <Show when={showPlayer()}>
         <div class="fixed inset-0 bg-black z-[10000000] flex flex-col animate-fade-in" onClick={(e)=>e.stopPropagation()}>
           <div class="p-4 flex justify-between items-center bg-[#0c0e14] border-b border-white/5 shadow-xl">
@@ -173,9 +214,11 @@ export function DetailsModal(props) {
                 <button type="button" onClick={(e) => { e.stopPropagation(); setShowPlayer(false); }} class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all"><Icon name="arrow_back" class="text-sm" /></button>
                 <h3 class="font-bold text-sm text-white truncate">{movie().title || movie().name}</h3>
             </div>
+            
+            {/* VidZee Top Switcher */}
             <div class="flex gap-2 shrink-0">
                 <button type="button" onClick={(e)=>{e.stopPropagation(); setActiveServer('VidLink');}} class={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all ${activeServer()==='VidLink'?'bg-[var(--primary)] text-[#0c0e14] shadow-[0_0_10px_var(--primary)]':'bg-white/5 text-gray-400 hover:text-white'}`}>VidLink</button>
-                <button type="button" onClick={(e)=>{e.stopPropagation(); setActiveServer('Vidsrc');}} class={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all ${activeServer()==='Vidsrc'?'bg-[#10b981] text-[#0c0e14] shadow-[0_0_10px_#10b981]':'bg-white/5 text-gray-400 hover:text-white'}`}>Vidsrc</button>
+                <button type="button" onClick={(e)=>{e.stopPropagation(); setActiveServer('VidZee');}} class={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all ${activeServer()==='VidZee'?'bg-[#10b981] text-[#0c0e14] shadow-[0_0_10px_#10b981]':'bg-white/5 text-gray-400 hover:text-white'}`}>VidZee</button>
             </div>
           </div>
           <div class="flex-1 bg-black w-full h-full relative">
