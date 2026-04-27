@@ -3,6 +3,16 @@ import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY } from '../utils';
 
+// Matrix of 6 Working Streaming Servers
+const SERVERS = [
+  { id: 'vidzee', name: 'VidZee (Fast)', icon: 'smart_display' },
+  { id: 'vidlink', name: 'VidLink', icon: 'play_circle' },
+  { id: 'vidsrcpro', name: 'Vidsrc Pro', icon: 'dns' },
+  { id: 'autoembed', name: 'AutoEmbed', icon: 'bolt' },
+  { id: 'smashy', name: 'SmashyStream', icon: 'stream' },
+  { id: 'multiembed', name: 'MultiEmbed', icon: 'dynamic_feed' }
+];
+
 export function DetailsModal(props) {
   const movie = createMemo(() => props.watchlist.find(m => String(m.id) === String(props.id)));
   const [details, setDetails] = createSignal({});
@@ -10,24 +20,16 @@ export function DetailsModal(props) {
   const [trailerKey, setTrailerKey] = createSignal(null); 
   const [playTrailer, setPlayTrailer] = createSignal(false);
   const [showPlayer, setShowPlayer] = createSignal(false); 
-  const [activeServer, setActiveServer] = createSignal('VidLink');
+  const [activeServer, setActiveServer] = createSignal('vidzee'); // Default server
   const [omdbData, setOmdbData] = createSignal({ imdb: '-', rt: '-' });
   const [form, setForm] = createSignal({ status: '', rating: '', watchDate: '', notes: '', region: '', season: 1, episode: 1, tag: '', platforms: '', genres: '' });
   
   // VidZee Event Listener for Player Progress
   const handleVidZeeMessages = (event) => {
     if (event.origin !== 'https://player.vidzee.wtf') return;
-    
-    // Save Media Data to LocalStorage
     if (event.data?.type === 'MEDIA_DATA') {
       const mediaData = event.data.data;
       localStorage.setItem('vidZeeProgress', JSON.stringify(mediaData));
-    }
-    
-    // Log Player Events
-    if (event.data?.type === 'PLAYER_EVENT') {
-      const { event: eventType, currentTime, duration } = event.data.data;
-      console.log(`[VidZee] ${eventType} at ${currentTime}s / ${duration}s`);
     }
   };
 
@@ -70,14 +72,20 @@ export function DetailsModal(props) {
   const progressPct = createMemo(() => isCompleted() ? 100 : Math.min(((movie()?.episode||0) / (movie()?.totalEps||1)) * 100, 100));
   const movieFranchises = createMemo(() => props.franchises?.filter(f => movie()?.franchises?.[f.id] !== undefined).map(f => f.name).join(', '));
   
-  // Updated Stream URL to support VidZee
-  const getStreamUrl = (server) => { 
-      const id = movie().id; const s = movie().season || 1; const e = movie().episode || 1; const pColor = 'b1a1ff'; 
-      if (server === 'VidLink') { 
-          return movie().media_type === 'tv' ? `https://vidlink.pro/tv/${id}/${s}/${e}?primaryColor=${pColor}&autoplay=false` : `https://vidlink.pro/movie/${id}?primaryColor=${pColor}&autoplay=false`; 
-      } 
-      // Return VidZee link
-      return movie().media_type === 'tv' ? `https://player.vidzee.wtf/embed/tv/${id}/${s}/${e}` : `https://player.vidzee.wtf/embed/movie/${id}`; 
+  // Smart Stream URL Generator based on selected server
+  const getStreamUrl = (serverId) => { 
+      const id = movie().id; const s = movie().season || 1; const e = movie().episode || 1; 
+      const type = movie().media_type === 'tv' ? 'tv' : 'movie';
+      
+      switch(serverId) {
+          case 'vidzee': return type === 'tv' ? `https://player.vidzee.wtf/embed/tv/${id}/${s}/${e}` : `https://player.vidzee.wtf/embed/movie/${id}`;
+          case 'vidlink': return type === 'tv' ? `https://vidlink.pro/tv/${id}/${s}/${e}?primaryColor=b1a1ff&autoplay=false` : `https://vidlink.pro/movie/${id}?primaryColor=b1a1ff&autoplay=false`;
+          case 'vidsrcpro': return type === 'tv' ? `https://vidsrc.pro/embed/tv/${id}/${s}/${e}` : `https://vidsrc.pro/embed/movie/${id}`;
+          case 'autoembed': return type === 'tv' ? `https://autoembed.co/tv/tmdb/${id}-${s}-${e}` : `https://autoembed.co/movie/tmdb/${id}`;
+          case 'smashy': return type === 'tv' ? `https://player.smashy.stream/tv/${id}?s=${s}&e=${e}` : `https://player.smashy.stream/movie/${id}`;
+          case 'multiembed': return type === 'tv' ? `https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1&s=${s}&e=${e}` : `https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1`;
+          default: return '';
+      }
   };
 
   return (
@@ -126,11 +134,22 @@ export function DetailsModal(props) {
 
                 <Show when={isEdit()} fallback={
                   <div class="animate-fade-in">
-                    <div class="flex gap-2 mb-6">
-                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveServer('VidLink'); setShowPlayer(true); }} class="flex-1 bg-[var(--primary)] text-[#0c0e14] font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[var(--primary)]/20"><Icon name="play_circle" fill class="text-[16px]"/> VidLink</button>
-                        
-                        {/* VidZee Button */}
-                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setActiveServer('VidZee'); setShowPlayer(true); }} class="flex-1 bg-[#10b981] text-[#0c0e14] font-black py-4 rounded-2xl uppercase text-[10px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#10b981]/20"><Icon name="smart_display" fill class="text-[16px]"/> VidZee</button>
+                    
+                    {/* New Server Switcher UI before Watching */}
+                    <div class="mb-6 bg-black/40 backdrop-blur-md p-4 rounded-[1.5rem] border border-white/5 shadow-inner">
+                        <div class="flex justify-between items-center mb-3 px-1">
+                            <span class="text-[9px] uppercase font-black text-gray-400 tracking-widest flex items-center gap-1.5"><Icon name="router" class="text-[12px] text-[var(--primary)]"/> Streaming Node</span>
+                        </div>
+                        <div class="flex gap-2 overflow-x-auto hide-scrollbar pb-2 px-1">
+                            <For each={SERVERS}>{(srv) => (
+                                <button type="button" onClick={(e) => { e.stopPropagation(); setActiveServer(srv.id); }} class={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all shrink-0 border shadow-sm ${activeServer() === srv.id ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)] scale-105' : 'border-white/5 bg-white/5 text-gray-500 hover:text-white'}`}>
+                                    <Icon name={srv.icon} class="text-[14px]" /> {srv.name}
+                                </button>
+                            )}</For>
+                        </div>
+                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPlayer(true); }} class="w-full mt-3 bg-gradient-to-r from-[var(--secondary)] to-[var(--primary)] text-[#0c0e14] font-black py-4 rounded-xl uppercase text-[11px] tracking-widest active:scale-95 transition-transform flex items-center justify-center gap-2 shadow-lg shadow-[var(--primary)]/20">
+                            <Icon name="play_circle" fill class="text-[18px]"/> Watch Now
+                        </button>
                     </div>
 
                     <p class="text-gray-400 text-sm mb-6 leading-relaxed italic border-l-2 border-[var(--primary)]/30 pl-3">"{details().overview || (typeof movie().overview === 'string' ? movie().overview : 'No overview available.')}"</p>
@@ -210,19 +229,24 @@ export function DetailsModal(props) {
       <Show when={showPlayer()}>
         <div class="fixed inset-0 bg-black z-[10000000] flex flex-col animate-fade-in" onClick={(e)=>e.stopPropagation()}>
           <div class="p-4 flex justify-between items-center bg-[#0c0e14] border-b border-white/5 shadow-xl">
-            <div class="flex items-center gap-3 overflow-hidden pr-2">
-                <button type="button" onClick={(e) => { e.stopPropagation(); setShowPlayer(false); }} class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all"><Icon name="arrow_back" class="text-sm" /></button>
-                <h3 class="font-bold text-sm text-white truncate">{movie().title || movie().name}</h3>
+            <div class="flex items-center gap-3 overflow-hidden pr-2 flex-1">
+                <button type="button" onClick={(e) => { e.stopPropagation(); setShowPlayer(false); }} class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all shrink-0"><Icon name="arrow_back" class="text-sm" /></button>
+                <h3 class="font-bold text-sm text-white truncate max-w-[150px]">{movie().title || movie().name}</h3>
             </div>
             
-            {/* VidZee Top Switcher */}
+            {/* Sleek Dropdown Switcher inside Player */}
             <div class="flex gap-2 shrink-0">
-                <button type="button" onClick={(e)=>{e.stopPropagation(); setActiveServer('VidLink');}} class={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all ${activeServer()==='VidLink'?'bg-[var(--primary)] text-[#0c0e14] shadow-[0_0_10px_var(--primary)]':'bg-white/5 text-gray-400 hover:text-white'}`}>VidLink</button>
-                <button type="button" onClick={(e)=>{e.stopPropagation(); setActiveServer('VidZee');}} class={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all ${activeServer()==='VidZee'?'bg-[#10b981] text-[#0c0e14] shadow-[0_0_10px_#10b981]':'bg-white/5 text-gray-400 hover:text-white'}`}>VidZee</button>
+                <div class="relative bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 flex items-center gap-1 hover:bg-white/10 transition-colors">
+                    <Icon name="router" class="text-gray-400 text-[14px]" />
+                    <select value={activeServer()} onChange={(e) => { e.stopPropagation(); setActiveServer(e.target.value); }} class="bg-transparent text-[10px] font-black uppercase tracking-widest text-[var(--primary)] outline-none appearance-none cursor-pointer pr-4 pl-1">
+                        <For each={SERVERS}>{(srv) => <option value={srv.id} class="bg-[#0c0e14] text-white">{srv.name}</option>}</For>
+                    </select>
+                    <Icon name="expand_more" class="text-gray-400 text-[14px] absolute right-1 pointer-events-none" />
+                </div>
             </div>
           </div>
           <div class="flex-1 bg-black w-full h-full relative">
-            <div class="absolute inset-0 flex items-center justify-center pointer-events-none"><Icon name="hourglass_empty" class="text-white/20 text-4xl animate-spin"/></div>
+            <div class="absolute inset-0 flex flex-col gap-3 items-center justify-center pointer-events-none opacity-50"><Icon name="dns" class="text-[var(--primary)] text-4xl animate-pulse"/><p class="text-[10px] uppercase font-black tracking-widest text-[var(--primary)]">Connecting to Node...</p></div>
             <iframe src={getStreamUrl(activeServer())} class="w-full h-full border-none relative z-10" allowfullscreen ></iframe>
           </div>
         </div>
