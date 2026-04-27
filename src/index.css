@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body.theme-sage { --primary: #b1a1ff; --secondary: #ff9ac2; }
+body.theme-matrix { --primary: #00ff41; --secondary: #008f11; }
+body.theme-netflix { --primary: #e50914; --secondary: #b20710; }
+body.theme-cyberpunk { --primary: #fce205; --secondary: #ff003c; }
+body.theme-interstellar { --primary: #38bdf8; --secondary: #fbbf24; }
+body.theme-neonhorizon { --primary: #f472b6; --secondary: #22d3ee; }
+body.theme-vibranium { --primary: #7c3aed; --secondary: #14b8a6; }
+
+body { 
+    font-family: 'Inter', sans-serif; 
+    background-color: #08090b; 
+    color: #e5e4ed; 
+    -webkit-tap-highlight-color: transparent; 
+    overflow-x: hidden; 
+}
+.font-headline { font-family: 'Epilogue', sans-serif; }
+.glass-surface { 
+    background: rgba(20, 22, 28, 0.65); 
+    backdrop-filter: blur(20px); 
+    -webkit-backdrop-filter: blur(20px); 
+    border: 1px solid rgba(255, 255, 255, 0.05); 
+}
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+.filled { font-variation-settings: 'FILL' 1; }
+
+button, .glass-surface, .group, img, input, select { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+
+@keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.animate-pop-in { animation: popIn 0.2s ease-out forwards; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+
+.skeleton-bg { 
+    background: linear-gradient(90deg, rgba(255,255,255,0.02) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.02) 75%); 
+    background-size: 200% 100%; 
+    animation: shimmer 1.5s infinite; 
+}
+@keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+/* Custom Glows & Tags */
+.glow-primary { filter: drop-shadow(0 0 8px var(--primary)); }
+.tag-chip { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); padding: 2px 8px; border-radius: 6px; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; }
+.rating-pill { background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.05); padding: 4px 10px; border-radius: 12px; display: flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 900; }
