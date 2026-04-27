@@ -3,14 +3,13 @@ import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY } from '../utils';
 
-// Matrix of 6 Working Streaming Servers
+// Matrix of Working Streaming Servers (Updated with SuperEmbed & Vidsrc.ru)
 const SERVERS = [
   { id: 'vidzee', name: 'VidZee (Fast)', icon: 'smart_display' },
   { id: 'vidlink', name: 'VidLink', icon: 'play_circle' },
-  { id: 'vidsrcpro', name: 'Vidsrc Pro', icon: 'dns' },
+  { id: 'vidsrcru', name: 'Vidsrc.ru', icon: 'dns' },
   { id: 'autoembed', name: 'AutoEmbed', icon: 'bolt' },
-  { id: 'smashy', name: 'SmashyStream', icon: 'stream' },
-  { id: 'multiembed', name: 'MultiEmbed', icon: 'dynamic_feed' }
+  { id: 'superembed', name: 'SuperEmbed', icon: 'stream' }
 ];
 
 export function DetailsModal(props) {
@@ -80,10 +79,9 @@ export function DetailsModal(props) {
       switch(serverId) {
           case 'vidzee': return type === 'tv' ? `https://player.vidzee.wtf/embed/tv/${id}/${s}/${e}` : `https://player.vidzee.wtf/embed/movie/${id}`;
           case 'vidlink': return type === 'tv' ? `https://vidlink.pro/tv/${id}/${s}/${e}?primaryColor=b1a1ff&autoplay=false` : `https://vidlink.pro/movie/${id}?primaryColor=b1a1ff&autoplay=false`;
-          case 'vidsrcpro': return type === 'tv' ? `https://vidsrc.pro/embed/tv/${id}/${s}/${e}` : `https://vidsrc.pro/embed/movie/${id}`;
+          case 'vidsrcru': return type === 'tv' ? `https://vidsrc.ru/tv/${id}/${s}/${e}?autoplay=true&colour=b1a1ff&autonextepisode=true&backbutton=https://vidsrc.ru/&logo=https://vidsrc.ru/logo.png` : `https://vidsrc.ru/movie/${id}?autoplay=true&colour=b1a1ff&backbutton=https://vidsrc.ru/&logo=https://vidsrc.ru/logo.png`;
           case 'autoembed': return type === 'tv' ? `https://autoembed.co/tv/tmdb/${id}-${s}-${e}` : `https://autoembed.co/movie/tmdb/${id}`;
-          case 'smashy': return type === 'tv' ? `https://player.smashy.stream/tv/${id}?s=${s}&e=${e}` : `https://player.smashy.stream/movie/${id}`;
-          case 'multiembed': return type === 'tv' ? `https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1&s=${s}&e=${e}` : `https://multiembed.mov/directstream.php?video_id=${id}&tmdb=1`;
+          case 'superembed': return type === 'tv' ? `https://getsuperembed.link/?video_id=${id}&tmdb=1&season=${s}&episode=${e}&player_color=b1a1ff` : `https://getsuperembed.link/?video_id=${id}&tmdb=1&player_color=b1a1ff`;
           default: return '';
       }
   };
@@ -135,14 +133,14 @@ export function DetailsModal(props) {
                 <Show when={isEdit()} fallback={
                   <div class="animate-fade-in">
                     
-                    {/* New Server Switcher UI before Watching */}
+                    {/* FIXED: Server Switcher UI (flex-wrap added for PC) */}
                     <div class="mb-6 bg-black/40 backdrop-blur-md p-4 rounded-[1.5rem] border border-white/5 shadow-inner">
                         <div class="flex justify-between items-center mb-3 px-1">
                             <span class="text-[9px] uppercase font-black text-gray-400 tracking-widest flex items-center gap-1.5"><Icon name="router" class="text-[12px] text-[var(--primary)]"/> Streaming Node</span>
                         </div>
-                        <div class="flex gap-2 overflow-x-auto hide-scrollbar pb-2 px-1">
+                        <div class="flex flex-wrap gap-2 pb-2 px-1">
                             <For each={SERVERS}>{(srv) => (
-                                <button type="button" onClick={(e) => { e.stopPropagation(); setActiveServer(srv.id); }} class={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all shrink-0 border shadow-sm ${activeServer() === srv.id ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)] scale-105' : 'border-white/5 bg-white/5 text-gray-500 hover:text-white'}`}>
+                                <button type="button" onClick={(e) => { e.stopPropagation(); setActiveServer(srv.id); }} class={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border shadow-sm ${activeServer() === srv.id ? 'border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--primary)] scale-105' : 'border-white/5 bg-white/5 text-gray-500 hover:text-white'}`}>
                                     <Icon name={srv.icon} class="text-[14px]" /> {srv.name}
                                 </button>
                             )}</For>
