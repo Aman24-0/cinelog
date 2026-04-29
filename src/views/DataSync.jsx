@@ -3,7 +3,6 @@ import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, TMDB_KEY, cleanPlatform } from '../utils';
 
-// Constants for API Check
 const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
 
 export function DataSync(props) {
@@ -36,7 +35,6 @@ export function DataSync(props) {
           let newGenres = item.genresList || [];
           let newTotalEps = item.totalEps || 0;
 
-          // TMDB Scan 
           const tmdbRes = await fetch(`https://api.themoviedb.org/3/${item.media_type||'movie'}/${item.id}?api_key=${TMDB_KEY}&append_to_response=watch/providers`);
           if (tmdbRes.ok) {
               const data = await tmdbRes.json();
@@ -50,7 +48,6 @@ export function DataSync(props) {
               }
           }
 
-          // WatchMode Scan 
           const wmType = item.media_type === 'tv' ? 'tv' : 'movie';
           const wmRes = await fetch(`https://api.watchmode.com/v1/title/${wmType}-${item.id}/sources/?apiKey=${WATCHMODE_KEY}&regions=IN,US`);
           if (wmRes.ok) {
@@ -82,7 +79,6 @@ export function DataSync(props) {
     props.showToast(`Vault Repaired! ${updatedCount} items synced.`);
   };
 
-  // 📦 Standard JSON Export
   const exportData = () => {
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(props.watchlist()));
     const dn = document.createElement('a');
@@ -94,7 +90,7 @@ export function DataSync(props) {
     props.showToast("Backup Downloaded!");
   };
 
-  // 📥 JSON Import with Progress & Logging
+  // 📥 Instant Duplicate-Skipping Import 
   const importData = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -109,13 +105,23 @@ export function DataSync(props) {
         setImportStats({ total: importedList.length, success: 0, skipped: 0 });
         setErrorLog([]);
 
+        // Instant Memory Check: Store existing IDs
+        const existingIds = new Set(props.watchlist().map(m => String(m.id)));
+
         for (let i = 0; i < importedList.length; i++) {
           const item = importedList[i];
           try {
             if (!item.id) throw new Error("Missing ID in object");
             
-            // Set doc directly to Firestore
+            // Fast Duplicate Check
+            if (existingIds.has(String(item.id))) {
+                throw new Error("Already exists in Vault");
+            }
+
             await setDoc(doc(db, 'users', props.uid, 'watchlist', String(item.id)), item);
+            
+            // Add to Set to prevent duplicates within the imported file itself
+            existingIds.add(String(item.id));
             setImportStats(p => ({ ...p, success: p.success + 1 }));
             
           } catch (err) {
@@ -126,7 +132,7 @@ export function DataSync(props) {
         
         setIsImporting(false);
         props.showToast("Import Finished!");
-        if (fileInputRef) fileInputRef.value = ''; // Reset input
+        if (fileInputRef) fileInputRef.value = ''; 
         
       } catch (err) {
         setIsImporting(false);
@@ -150,7 +156,6 @@ export function DataSync(props) {
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           
-          {/* DEEP SCAN & REPAIR CARD */}
           <div class="glass-surface p-6 sm:p-8 rounded-[2rem] border border-white/5 relative overflow-hidden flex flex-col justify-between">
               <div class="absolute top-0 right-0 w-32 h-32 bg-[var(--primary)]/10 blur-[50px] rounded-full pointer-events-none"></div>
               
@@ -183,11 +188,10 @@ export function DataSync(props) {
               </button>
           </div>
 
-          {/* BACKUP & EXPORT CARD */}
           <div class="glass-surface p-6 sm:p-8 rounded-[2rem] border border-white/5 relative overflow-hidden flex flex-col justify-start">
               <div>
                   <h3 class="text-lg font-black text-white flex items-center gap-2 mb-2"><Icon name="download" class="text-[var(--secondary)]" /> Local Backup & Restore</h3>
-                  <p class="text-xs text-gray-400 leading-relaxed mb-6">Export your cinematic universe to a JSON file, or restore from a previous backup. Check logs for any items that failed to import.</p>
+                  <p class="text-xs text-gray-400 leading-relaxed mb-6">Export your cinematic universe to a JSON file, or restore from a previous backup. Duplicate entries are automatically skipped.</p>
               </div>
 
               <div class="bg-black/40 p-4 rounded-2xl border border-white/5 flex items-center justify-between mb-4">
@@ -212,7 +216,6 @@ export function DataSync(props) {
                   </button>
               </div>
 
-              {/* Import Progress Viewer */}
               <Show when={isImporting() || importStats().total > 0}>
                   <div class="bg-black/50 p-4 rounded-2xl border border-white/5 mt-2 animate-fade-in">
                       <div class="flex justify-between items-center mb-2">
@@ -231,7 +234,6 @@ export function DataSync(props) {
                   </div>
               </Show>
 
-              {/* Skipped Error Log */}
               <Show when={errorLog().length > 0}>
                   <div class="mt-4 bg-red-500/10 border border-red-500/20 p-4 rounded-2xl animate-fade-in">
                       <div class="flex justify-between items-center border-b border-red-500/20 pb-2 mb-2">
