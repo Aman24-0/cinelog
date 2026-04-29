@@ -130,7 +130,16 @@ export default function App() {
             </nav>
           </div>
 
-          <Show when={searchModal()}><SearchModal onClose={() => setSearchModal(false)} uid={user().uid} showToast={showToast} watchlist={watchlist()} /></Show>
+          <Show when={searchModal()}>
+   <SearchModal 
+       onClose={() => setSearchModal(false)} 
+       uid={user().uid} 
+       showToast={showToast} 
+       watchlist={watchlist()} 
+       openPreview={(item) => { setSearchModal(false); setDetailsId(`PREVIEW_${JSON.stringify(item)}`); }} 
+   />
+</Show>
+
           <Show when={detailsId()}><DetailsModal id={detailsId()} watchlist={watchlist()} franchises={franchises()} onClose={() => setDetailsId(null)} uid={user().uid} showToast={showToast} theme={theme} /></Show>
           <Show when={statsModal()}><InsightsModal watchlist={watchlist} onClose={() => setStatsModal(false)} /></Show>
           <Show when={settingsModal()}><SettingsModal currentTheme={theme()} setTheme={setTheme} onClose={() => setSettingsModal(false)} /></Show>
