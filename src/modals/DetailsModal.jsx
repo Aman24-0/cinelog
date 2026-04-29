@@ -3,7 +3,7 @@ import { doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY } from '../utils';
 
-// Matrix of Working Streaming Servers (No-PHP Required)
+// Matrix of Working Streaming Servers 
 const SERVERS = [
   { id: 'vidzee', name: 'VidZee (Fast)', icon: 'smart_display' },
   { id: 'vidlink', name: 'VidLink', icon: 'play_circle' },
@@ -20,9 +20,13 @@ export function DetailsModal(props) {
   const [trailerKey, setTrailerKey] = createSignal(null); 
   const [playTrailer, setPlayTrailer] = createSignal(false);
   const [showPlayer, setShowPlayer] = createSignal(false); 
-  const [activeServer, setActiveServer] = createSignal('vidzee'); // Default server
+  const [activeServer, setActiveServer] = createSignal('vidzee'); 
   const [omdbData, setOmdbData] = createSignal({ imdb: '-', rt: '-' });
   const [form, setForm] = createSignal({ status: '', rating: '', watchDate: '', notes: '', region: '', season: 1, episode: 1, tag: '', platforms: '', genres: '' });
+  
+  // NEW: Rich Platforms Data (Logos + URLs)
+  const [richPlatforms, setRichPlatforms] = createSignal([]);
+  const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
   
   const handleVidZeeMessages = (event) => {
     if (event.origin !== 'https://player.vidzee.wtf') return;
@@ -48,11 +52,13 @@ export function DetailsModal(props) {
       if(movie()) { 
           setForm({ status: movie().status||'Planned', rating: movie().rating||'', watchDate: typeof movie().watchDate==='string'?movie().watchDate:'', notes: typeof movie().notes==='string'?movie().notes:'', region: movie().region||'International', season: movie().season||1, episode: movie().episode||1, tag: movie().tag||'', platforms: getSafePlatforms(movie()).join(', '), genres: getSafeGenres(movie()).join(', ') }); 
           
+          // TMDB Basic Details & Trailer
           fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}?api_key=${TMDB_KEY}&append_to_response=videos,credits`).then(r=>r.json()).then(d=>{ 
               setDetails(d);
               const v = d?.videos?.results; if(v){ let t = v.find(x=>x.site==='YouTube'&&x.type==='Trailer')||v.find(x=>x.site==='YouTube'&&x.type==='Teaser')||v.find(x=>x.site==='YouTube'); if(t) setTrailerKey(t.key); } 
           });
 
+          // OMDb Ratings
           const title = movie().title || movie().name;
           fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_KEY}`).then(r=>r.json()).then(d=>{
               if(d.Response === 'True') {
@@ -61,6 +67,64 @@ export function DetailsModal(props) {
                   updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { imdbRating: d.imdbRating || '-', rtRating: rt.replace('%','') });
               }
           });
+
+          // SMART FETCH: TMDB -> WatchMode (Fallback) + Auto-update old entries
+          const fetchProviders = async () => {
+              let providers = [];
+              try {
+                  const tmdbRes = await fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}/watch/providers?api_key=${TMDB_KEY}`);
+                  const tmdbData = await tmdbRes.json();
+                  const inData = tmdbData.results?.IN || tmdbData.results?.US; 
+                  
+                  // 1. Primary: TMDB
+                  if(inData && (inData.flatrate || inData.free || inData.ads)) {
+                      const raw = [...(inData.flatrate||[]), ...(inData.free||[]), ...(inData.ads||[])];
+                      providers = raw.map(p => ({
+                          name: p.provider_name,
+                          logo: `https://image.tmdb.org/t/p/w92${p.logo_path}`,
+                          url: tmdbData.results?.IN?.link || tmdbData.results?.US?.link || `https://www.justwatch.com/in/search?q=${encodeURIComponent(title)}`
+                      }));
+                  }
+
+                  // 2. Fallback: WatchMode
+                  if(providers.length === 0) {
+                      const wmType = movie().media_type === 'tv' ? 'tv' : 'movie';
+                      const wmRes = await fetch(`https://api.watchmode.com/v1/title/${wmType}-${movie().id}/sources/?apiKey=${WATCHMODE_KEY}&regions=IN,US`);
+                      const wmSources = await wmRes.json();
+                      
+                      if(Array.isArray(wmSources) && wmSources.length > 0) {
+                          const seen = new Set();
+                          for(let s of wmSources) {
+                              if(!seen.has(s.name) && (s.type === 'sub' || s.type === 'free')) {
+                                  seen.add(s.name);
+                                  providers.push({ name: s.name, logo: s.logo_100px, url: s.web_url });
+                              }
+                          }
+                      }
+                  }
+
+                  // Deduplicate & Clean
+                  const finalProviders = [];
+                  const seenNames = new Set();
+                  providers.forEach(p => {
+                      const cName = cleanPlatform(p.name);
+                      if(cName && !seenNames.has(cName)) {
+                          seenNames.add(cName);
+                          finalProviders.push({...p, name: cName});
+                      }
+                  });
+
+                  setRichPlatforms(finalProviders);
+
+                  // AUTO-FIX: Update old empty database entries
+                  const currentDbPlatforms = movie().platformsList || [];
+                  if(currentDbPlatforms.length === 0 && finalProviders.length > 0) {
+                      const newNames = finalProviders.map(p => p.name).slice(0,4);
+                      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: newNames });
+                  }
+              } catch(e) { console.log("Provider fetch error:", e); }
+          };
+          fetchProviders();
       } 
   });
 
@@ -71,7 +135,6 @@ export function DetailsModal(props) {
   const progressPct = createMemo(() => isCompleted() ? 100 : Math.min(((movie()?.episode||0) / (movie()?.totalEps||1)) * 100, 100));
   const movieFranchises = createMemo(() => props.franchises?.filter(f => movie()?.franchises?.[f.id] !== undefined).map(f => f.name).join(', '));
   
-  // Smart Stream URL Generator 
   const getStreamUrl = (serverId) => { 
       const id = movie().id; const s = movie().season || 1; const e = movie().episode || 1; 
       const type = movie().media_type === 'tv' ? 'tv' : 'movie';
@@ -192,7 +255,21 @@ export function DetailsModal(props) {
                         <SafeInfoRow icon="calendar_today" label="Watch Date" value={<span class="text-xs text-gray-300">{movie().watchDate || 'Not set'}</span>} />
                         <SafeInfoRow icon="public" label="Region" value={movie().region || 'International'} />
                         <SafeInfoRow icon="format_list_bulleted" label="Genre" value={<span class="text-xs text-gray-300">{getSafeGenres(movie()).join(', ') || 'N/A'}</span>} />
-                        <SafeInfoRow icon="connected_tv" label="Available On" value={<span class="text-xs font-bold text-[var(--secondary)]">{getSafePlatforms(movie()).join(', ') || 'N/A'}</span>} />
+                        
+                        {/* JustWatch Style Clickable Platforms Row */}
+                        <SafeInfoRow icon="connected_tv" label="Available On" value={
+                            <Show when={richPlatforms().length > 0} fallback={<span class="text-xs font-bold text-[var(--secondary)]">{getSafePlatforms(movie()).join(', ') || 'N/A'}</span>}>
+                                <div class="flex flex-wrap gap-2 mt-1">
+                                    <For each={richPlatforms().slice(0, 4)}>{(p) => (
+                                        <a href={p.url} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 bg-white/5 hover:bg-[var(--primary)]/20 border border-white/10 hover:border-[var(--primary)]/50 px-2.5 py-1.5 rounded-lg transition-all group shadow-sm">
+                                            <img src={p.logo} class="w-4 h-4 rounded-full object-cover bg-black" />
+                                            <span class="text-[9px] font-black text-gray-300 group-hover:text-white uppercase tracking-widest">{p.name}</span>
+                                        </a>
+                                    )}</For>
+                                </div>
+                            </Show>
+                        } />
+                        
                         <Show when={movie().tag}><SafeInfoRow icon="label" label="Tag" value={<span class="text-[9px] font-black uppercase tracking-widest bg-white/10 text-white px-2 py-0.5 rounded border border-white/20">{movie().tag}</span>} /></Show>
                         <Show when={movieFranchises()}><SafeInfoRow icon="folder_special" label="Lists" value={<span class="text-xs font-bold text-white">{movieFranchises()}</span>} /></Show>
                         <Show when={movie().notes && typeof movie().notes === 'string'}><div class="border-t border-white/5 pt-3 mt-3"><p class="text-[10px] uppercase font-black text-gray-500 tracking-widest mb-1 flex items-center gap-1"><Icon name="edit_note" class="text-[14px]"/> Notes</p><p class="text-sm text-gray-300 italic">"{movie().notes}"</p></div></Show>
@@ -223,7 +300,7 @@ export function DetailsModal(props) {
         </div>
       </Show>
 
-      {/* Clean Fullscreen Player Modal Without Fake Node Loader */}
+      {/* Fullscreen Player Modal */}
       <Show when={showPlayer()}>
         <div class="fixed inset-0 bg-black z-[10000000] flex flex-col animate-fade-in" onClick={(e)=>e.stopPropagation()}>
           <div class="p-4 flex justify-between items-center bg-[#0c0e14] border-b border-white/5 shadow-xl">
@@ -232,7 +309,7 @@ export function DetailsModal(props) {
                 <h3 class="font-bold text-sm text-white truncate max-w-[150px]">{movie().title || movie().name}</h3>
             </div>
             
-            {/* Sleek Dropdown Switcher inside Player */}
+            {/* Dropdown Switcher inside Player */}
             <div class="flex gap-2 shrink-0">
                 <div class="relative bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 flex items-center gap-1 hover:bg-white/10 transition-colors">
                     <Icon name="router" class="text-gray-400 text-[14px]" />
@@ -244,6 +321,7 @@ export function DetailsModal(props) {
             </div>
           </div>
           <div class="flex-1 bg-black w-full h-full relative">
+            <div class="absolute inset-0 flex flex-col gap-3 items-center justify-center pointer-events-none opacity-50"><Icon name="dns" class="text-[var(--primary)] text-4xl animate-pulse"/><p class="text-[10px] uppercase font-black tracking-widest text-[var(--primary)]">Connecting to Node...</p></div>
             <iframe src={getStreamUrl(activeServer())} class="w-full h-full border-none relative z-10" allowfullscreen ></iframe>
           </div>
         </div>
