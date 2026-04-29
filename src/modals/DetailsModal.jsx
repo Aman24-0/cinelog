@@ -27,9 +27,31 @@ const getPlatformDict = (title, platformName) => {
         'sonyliv': { name: 'Sony LIV', logo: 'https://image.tmdb.org/t/p/w92/8N0DNa4BO3lH24KWv1EjJh4TxGL.jpg', url: `https://www.sonyliv.com/` },
         'zee5': { name: 'Zee5', logo: 'https://image.tmdb.org/t/p/w92/5vVzg0rtZAwQGzQoT2Zk0n43Nym.jpg', url: `https://www.zee5.com/global/search?q=${enc}` },
         'appletv': { name: 'Apple TV', logo: 'https://image.tmdb.org/t/p/w92/2E0ficP6ijhlCSJuwHI4isW0QhD.jpg', url: `https://tv.apple.com/` },
-        'crunchyroll': { name: 'Crunchyroll', logo: 'https://image.tmdb.org/t/p/w92/mXeC4TrcgdU6j81XreWIjA6k7yC.jpg', url: `https://www.crunchyroll.com/search?q=${enc}` }
+        'crunchyroll': { name: 'Crunchyroll', logo: 'https://image.tmdb.org/t/p/w92/mXeC4TrcgdU6j81XreWIjA6k7yC.jpg', url: `https://www.crunchyroll.com/search?q=${enc}` },
+        'youtube': { name: 'YouTube', logo: 'https://image.tmdb.org/t/p/w92/p3Z12gKq2qvJaUOMeKNU2mzKVI9.jpg', url: `https://www.youtube.com/results?search_query=${enc}` }
     };
     return dbData[cleanN] || null;
+};
+
+// Brand Color Generator for Custom CSS Avatars
+const getBrandColor = (name) => {
+    const n = name.toLowerCase();
+    if(n.includes('vi ')) return '#ed1c24'; // Red for Vi
+    if(n.includes('aha')) return '#ff6600'; // Orange for Aha
+    if(n.includes('hoichoi')) return '#e50b14'; // Red for Hoichoi
+    if(n.includes('sun')) return '#f09a36'; // Yellow-Orange for SunNXT
+    if(n.includes('voot')) return '#5a2282'; // Purple for Voot
+    if(n.includes('mx')) return '#003366'; // Blue for MX Player
+    if(n.includes('ullu')) return '#00b0b8'; // Teal for Ullu
+    if(n.includes('alt')) return '#e30f1d'; // Red for ALTBalaji
+    if(n.includes('eros')) return '#ff0000'; // Red for Eros Now
+    if(n.includes('apple')) return '#ffffff'; // White for Apple
+    if(n.includes('discovery')) return '#001e61'; // Navy Blue for Discovery+
+    
+    // Deterministic Fallback Color based on string hash
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return `hsl(${Math.abs(hash) % 360}, 70%, 45%)`;
 };
 
 export function DetailsModal(props) {
@@ -121,6 +143,7 @@ export function DetailsModal(props) {
                   } catch(e) {}
               }
 
+              // Deduplicate API Names
               let finalProviders = [];
               const seenNames = new Set();
               apiProviders.forEach(p => {
@@ -131,29 +154,38 @@ export function DetailsModal(props) {
                   }
               });
 
-              // MANUAL BACKUP FIX with Smart Avatar Logic
-              if(finalProviders.length === 0 && movie().platformsList && movie().platformsList.length > 0) {
-                  movie().platformsList.forEach(p => {
-                      const pData = getPlatformDict(title, p);
-                      if(pData) {
+              // MIX DB (Manual/Purane) + API
+              const currentDbPlatforms = movie().platformsList || [];
+              const fetchedNames = finalProviders.map(p => p.name);
+              
+              currentDbPlatforms.forEach(p => {
+                  const cleanP = cleanPlatform(p);
+                  if (!fetchedNames.includes(cleanP)) {
+                      // Platform exists in DB but API didn't find it (Manually added)
+                      const pData = getPlatformDict(title, cleanP);
+                      if (pData) {
                           finalProviders.push({ name: pData.name, logo: pData.logo, url: pData.url });
                       } else {
-                          // Clean avatar generator for unknown platforms
+                          // SMART CSS AVATAR FIX (No more broken images)
                           finalProviders.push({ 
-                              name: p, 
-                              logo: `https://ui-avatars.com/api/?name=${encodeURIComponent(p)}&background=171921&color=b1a1ff&rounded=true&bold=true&size=128`, 
-                              url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(p)}` 
+                              name: cleanP, 
+                              isCss: true,
+                              color: getBrandColor(cleanP),
+                              url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}` 
                           });
                       }
-                  });
-              }
+                      fetchedNames.push(cleanP); // Add to fetched names array for sync check later
+                  }
+              });
 
               setRichPlatforms(finalProviders);
 
-              const currentDbPlatforms = movie().platformsList || [];
-              if(currentDbPlatforms.length === 0 && finalProviders.length > 0) {
-                  const newNames = finalProviders.map(p => p.name).slice(0,4);
-                  await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: newNames });
+              // SMART AUTO-SYNC TO DATABASE
+              // Check if API found new platforms that are not in DB, sync them quietly so Vault Filter updates!
+              const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n));
+              if(missingInDb.length > 0) {
+                  const mergedPlatforms = [...new Set([...currentDbPlatforms, ...fetchedNames])];
+                  await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: mergedPlatforms });
               }
           };
           fetchProviders();
@@ -291,9 +323,15 @@ export function DetailsModal(props) {
                         <SafeInfoRow icon="connected_tv" label="Available On" value={
                             <Show when={richPlatforms().length > 0} fallback={<span class="text-xs font-bold text-gray-500">-</span>}>
                                 <div class="flex flex-wrap gap-2 mt-1">
-                                    <For each={richPlatforms().slice(0, 4)}>{(p) => (
+                                    <For each={richPlatforms().slice(0, 5)}>{(p) => (
                                         <a href={p.url} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 bg-white/5 hover:bg-[var(--primary)]/20 border border-white/10 hover:border-[var(--primary)]/50 px-2.5 py-1.5 rounded-lg transition-all group shadow-sm">
-                                            <img src={p.logo} class="w-4 h-4 rounded-full object-cover bg-black border border-white/10" />
+                                            <Show when={!p.isCss} fallback={
+                                                <div class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shadow-inner" style={{ "background-color": p.color, color: p.color === '#ffffff' ? '#000' : '#fff' }}>
+                                                    {p.name.charAt(0).toUpperCase()}
+                                                </div>
+                                            }>
+                                                <img src={p.logo} class="w-4 h-4 rounded-full object-cover bg-black border border-white/10" />
+                                            </Show>
                                             <span class="text-[9px] font-black text-gray-300 group-hover:text-white uppercase tracking-widest">{p.name}</span>
                                         </a>
                                     )}</For>
