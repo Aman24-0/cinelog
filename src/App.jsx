@@ -28,6 +28,7 @@ export default function App() {
   const [view, setView] = createSignal('dashboard');
   const [theme, setTheme] = createSignal(localStorage.getItem('cinelog_theme') || 'sage');
   const [loading, setLoading] = createSignal(true);
+  const [splashWait, setSplashWait] = createSignal(true); // 3-second wait timer
   const [activeVaultStatus, setActiveVaultStatus] = createSignal('all');
   
   const [searchModal, setSearchModal] = createSignal(false);
@@ -43,6 +44,9 @@ export default function App() {
   createEffect(() => { view(); window.scrollTo(0, 0); });
 
   onMount(() => {
+    // Start mandatory 3-second splash screen
+    setTimeout(() => setSplashWait(false), 3000);
+
     onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
@@ -74,7 +78,7 @@ export default function App() {
   return (
     <ErrorBoundary fallback={(err) => <div class="h-screen flex flex-col items-center justify-center p-10 text-center"><Icon name="error" class="text-red-500 text-6xl mb-4"/><h2 class="text-xl font-bold text-white mb-2">Something broke!</h2><p class="text-xs text-gray-500 mb-6">{err.toString()}</p><button onClick={()=>window.location.reload()} class="bg-red-500 text-white px-6 py-2 rounded-lg font-bold">Reload App</button></div>}>
     <div class="min-h-screen pb-28" onClick={() => setUserMenuOpen(false)}>
-      <Show when={!loading()} fallback={<LoadingScreen />}>
+      <Show when={!loading() && !splashWait()} fallback={<LoadingScreen />}>
         <Show when={user()} fallback={
           <div class="h-screen flex flex-col items-center justify-center p-6 text-center">
             <h1 class="text-5xl font-black font-headline text-[var(--primary)] mb-4 tracking-tighter">CINELOG</h1>
