@@ -4,20 +4,17 @@ import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from
 
 import { db, auth } from './firebase';
 import { Icon } from './utils';
-
-// Components
 import { LoadingScreen } from './components/LoadingScreen';
-
-// Views
 import { Dashboard } from './views/Dashboard';
 import { Vault } from './views/Vault';
 import { FranchisesView } from './views/FranchisesView';
 import { UpcomingView } from './views/UpcomingView';
 import { DataSync } from './views/DataSync';
-
-// Modals
 import { DetailsModal } from './modals/DetailsModal';
-import { SearchModal, InsightsModal, SettingsModal } from './modals/Modals';
+
+// 🌟 UPDATED IMPORTS HERE
+import { InsightsModal, SettingsModal } from './modals/Modals';
+import { SearchModal } from './modals/SearchModal';
 
 const NavBtn = (props) => <button onClick={props.onClick} class={`flex flex-col items-center gap-1 w-14 transition-colors ${props.active ? 'text-[var(--primary)]' : 'text-gray-500'}`}><Icon name={props.icon} fill={props.active} /><span class="text-[8px] font-bold uppercase tracking-wide">{props.label}</span></button>;
 
@@ -28,7 +25,7 @@ export default function App() {
   const [view, setView] = createSignal('dashboard');
   const [theme, setTheme] = createSignal(localStorage.getItem('cinelog_theme') || 'sage');
   const [loading, setLoading] = createSignal(true);
-  const [splashWait, setSplashWait] = createSignal(true); // 3-second wait timer
+  const [splashWait, setSplashWait] = createSignal(true); 
   const [activeVaultStatus, setActiveVaultStatus] = createSignal('all');
   
   const [searchModal, setSearchModal] = createSignal(false);
@@ -44,9 +41,7 @@ export default function App() {
   createEffect(() => { view(); window.scrollTo(0, 0); });
 
   onMount(() => {
-    // Start mandatory 3-second splash screen
     setTimeout(() => setSplashWait(false), 3000);
-
     onAuthStateChanged(auth, (u) => {
       setUser(u);
       if (u) {
@@ -131,16 +126,17 @@ export default function App() {
           </div>
 
           <Show when={searchModal()}>
-   <SearchModal 
-       onClose={() => setSearchModal(false)} 
-       uid={user().uid} 
-       showToast={showToast} 
-       watchlist={watchlist()} 
-       openPreview={(item) => { setSearchModal(false); setDetailsId(`PREVIEW_${JSON.stringify(item)}`); }} 
-   />
-</Show>
-
-          <Show when={detailsId()}><DetailsModal id={detailsId()} watchlist={watchlist()} franchises={franchises()} onClose={() => setDetailsId(null)} uid={user().uid} showToast={showToast} theme={theme} /></Show>
+             <SearchModal 
+                 onClose={() => setSearchModal(false)} 
+                 uid={user().uid} 
+                 showToast={showToast} 
+                 watchlist={watchlist()} 
+                 openPreview={(item) => { setSearchModal(false); setDetailsId(`PREVIEW_${JSON.stringify(item)}`); }} 
+             />
+          </Show>
+          <Show when={detailsId()}>
+              <DetailsModal id={detailsId()} watchlist={watchlist()} franchises={franchises()} onClose={() => setDetailsId(null)} uid={user().uid} showToast={showToast} theme={theme} />
+          </Show>
           <Show when={statsModal()}><InsightsModal watchlist={watchlist} onClose={() => setStatsModal(false)} /></Show>
           <Show when={settingsModal()}><SettingsModal currentTheme={theme()} setTheme={setTheme} onClose={() => setSettingsModal(false)} /></Show>
           
