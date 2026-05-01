@@ -13,12 +13,9 @@
  */
 
 import { createSignal, createMemo, Show, For } from 'solid-js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { geminiModel } from '../firebase';
 import { Icon } from '../utils';
 
-// Initialize Gemini client using Vite env var
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
