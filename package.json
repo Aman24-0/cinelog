@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^10.13.0",
+    "firebase": "^11.0.0",
     "solid-js": "^1.8.17"
   },
   "devDependencies": {
