@@ -18,7 +18,7 @@ import { Icon } from '../utils';
 
 // Initialize Gemini client using Vite env var
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+const geminiModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
