@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "firebase": "^10.11.0",
-    "@google/generative-ai": "^0.21.0",
+    "@google/generative-ai": "^0.24.0",
     "solid-js": "^1.8.17"
   },
   "devDependencies": {
