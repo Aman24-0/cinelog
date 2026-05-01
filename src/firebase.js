@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
-import { getAI, getGenerativeModel, GoogleAIBackend } from 'firebase/ai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAvV2m7IAbDGSr0ZdFNv9Rnq9oUEAgufyI",
@@ -16,5 +16,5 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 
-const ai = getAI(app, { backend: new GoogleAIBackend() });
-export const geminiModel = getGenerativeModel(ai, { model: 'gemini-2.0-flash' });
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+export const geminiModel = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
