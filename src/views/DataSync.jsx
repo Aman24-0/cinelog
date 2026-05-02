@@ -183,7 +183,11 @@ export function DataSync(props) {
                   </div>
               </Show>
 
-              <button disabled={isSyncing()} onClick={runDeepScan} class={`w-full font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition-transform shadow-lg flex items-center justify-center gap-2 ${isSyncing() ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-[var(--secondary)] to-[var(--primary)] text-[#0c0e14] hover:scale-[1.02] active:scale-95 shadow-[var(--primary)]/20'}`}>
+              <button disabled={isSyncing()} onClick={runDeepScan}
+                class="w-full font-black py-4 rounded-xl text-[10px] uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+                style={isSyncing()
+                  ? 'background: var(--raised); color: var(--dim); cursor: not-allowed; border: 1px solid var(--border)'
+                  : 'background: var(--p); color: #05060a; box-shadow: 0 0 24px var(--p-glow); border: none'}>
                   {isSyncing() ? 'Sync in Progress...' : 'Start Deep Scan'}
               </button>
           </div>
@@ -205,13 +209,19 @@ export function DataSync(props) {
               </div>
 
               <div class="grid grid-cols-2 gap-3 mb-2">
-                  <button onClick={exportData} class="bg-white/5 hover:bg-white/10 text-white border border-white/10 font-black py-3 rounded-xl text-[9px] uppercase tracking-widest hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-1.5">
+                  <button onClick={exportData}
+                    class="font-black py-3 rounded-xl text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5"
+                    style="background: var(--p-dim); color: var(--p); border: 1px solid var(--p); box-shadow: 0 0 12px var(--p-glow)">
                       <Icon name="file_download" class="text-[14px]" /> Export
                   </button>
                   
                   <input type="file" accept=".json" class="hidden" ref={fileInputRef} onChange={importData} />
                   
-                  <button disabled={isImporting()} onClick={() => fileInputRef.click()} class={`font-black py-3 rounded-xl text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 border border-transparent ${isImporting() ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-white/5 hover:bg-white/10 text-[var(--primary)] border hover:border-[var(--primary)]/50 active:scale-95'}`}>
+                  <button disabled={isImporting()} onClick={() => fileInputRef.click()}
+                    class="font-black py-3 rounded-xl text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5"
+                    style={isImporting()
+                      ? 'background: var(--raised); color: var(--dim); cursor: not-allowed; border: 1px solid var(--border)'
+                      : 'background: rgba(var(--p2-raw, 255,120,196),0.12); color: var(--p2); border: 1px solid var(--p2)'}>
                       <Icon name={isImporting() ? "hourglass_empty" : "file_upload"} class="text-[14px]" /> {isImporting() ? 'Wait...' : 'Import'}
                   </button>
               </div>

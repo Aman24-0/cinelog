@@ -135,12 +135,43 @@ export function UpcomingView(props) {
   return (
     <div class="pb-10 animate-fade-in">
       <h2 class="text-3xl font-headline font-black drop-shadow-md mb-6">Upcoming</h2>
-      <div class="flex gap-2 glass-surface p-1.5 rounded-2xl mb-4 border border-white/5 shadow-lg"><button onClick={()=>{setActiveTab('Indian'); setLang('all');}} class={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab()==='Indian'?'bg-gradient-to-r from-[var(--secondary)] to-[var(--primary)] text-[#0c0e14] shadow-md':'text-gray-400 hover:text-white'}`}>Indian</button><button onClick={()=>{setActiveTab('International'); setLang('all');}} class={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${activeTab()==='International'?'bg-gradient-to-r from-[var(--secondary)] to-[var(--primary)] text-[#0c0e14] shadow-md':'text-gray-400 hover:text-white'}`}>International</button></div>
-      <div class="flex gap-2 glass-surface p-1.5 rounded-2xl mb-4 border border-white/5 shadow-lg"><button onClick={()=>setMediaType('movie')} class={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${mediaType()==='movie'?'bg-[var(--primary)] text-[#0c0e14] shadow-md':'text-gray-400 hover:text-white'}`}>Movies</button><button onClick={()=>setMediaType('tv')} class={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all ${mediaType()==='tv'?'bg-[var(--primary)] text-[#0c0e14] shadow-md':'text-gray-400 hover:text-white'}`}>Series</button></div>
+      {/* Region Toggle */}
+      <div class="flex gap-2 p-1.5 rounded-2xl mb-4 shadow-lg" style="background: var(--raised); border: 1px solid var(--border-active)">
+        <button onClick={()=>{setActiveTab('Indian'); setLang('all');}}
+          class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all"
+          style={activeTab()==='Indian' ? 'background: var(--p); color: #05060a; box-shadow: 0 0 16px var(--p-glow)' : 'color: var(--muted)'}>
+          Indian
+        </button>
+        <button onClick={()=>{setActiveTab('International'); setLang('all');}}
+          class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all"
+          style={activeTab()==='International' ? 'background: var(--p); color: #05060a; box-shadow: 0 0 16px var(--p-glow)' : 'color: var(--muted)'}>
+          International
+        </button>
+      </div>
+
+      {/* Media Type Toggle */}
+      <div class="flex gap-2 p-1.5 rounded-2xl mb-4 shadow-lg" style="background: var(--raised); border: 1px solid var(--border-active)">
+        <button onClick={()=>setMediaType('movie')}
+          class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all"
+          style={mediaType()==='movie' ? 'background: var(--p); color: #05060a; box-shadow: 0 0 16px var(--p-glow)' : 'color: var(--muted)'}>
+          Movies
+        </button>
+        <button onClick={()=>setMediaType('tv')}
+          class="flex-1 py-2.5 rounded-xl text-xs font-bold transition-all"
+          style={mediaType()==='tv' ? 'background: var(--p); color: #05060a; box-shadow: 0 0 16px var(--p-glow)' : 'color: var(--muted)'}>
+          Series
+        </button>
+      </div>
 
       <Show when={activeTab() === 'Indian'}>
-        <div class="flex gap-2 overflow-x-auto hide-scrollbar mb-6 glass-surface p-2 rounded-2xl border border-white/5 shadow-inner">
-            <For each={['all', 'hi', 'te', 'ta', 'ml']}>{(l) => (<button onClick={()=>setLang(l)} class={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-colors ${lang()===l?'bg-[var(--primary)]/20 text-[var(--primary)]':'text-gray-400 hover:text-white'}`}>{l === 'all' ? 'All' : l.toUpperCase()}</button>)}</For>
+        <div class="flex gap-2 overflow-x-auto hide-scrollbar mb-6 p-2 rounded-2xl" style="background: var(--raised); border: 1px solid var(--border-active)">
+          <For each={['all', 'hi', 'te', 'ta', 'ml']}>{(l) => (
+            <button onClick={()=>setLang(l)}
+              class="px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-all"
+              style={lang()===l ? 'background: var(--p); color: #05060a; box-shadow: 0 0 12px var(--p-glow)' : 'color: var(--muted)'}>
+              {l === 'all' ? 'All' : l.toUpperCase()}
+            </button>
+          )}</For>
         </div>
       </Show>
 
