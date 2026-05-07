@@ -100,7 +100,7 @@ export function Vault(props) {
         </div>
       </Show>
 
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
         <For each={filtered().slice(0, displayLimit())}>
           {(m) => <MovieCard movie={m} onClick={() => props.openMovie(m.id)} />}
         </For>

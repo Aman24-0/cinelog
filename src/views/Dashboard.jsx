@@ -128,7 +128,7 @@ export function Dashboard(props) {
             View All <Icon name="arrow_forward" class="text-xs" />
           </button>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 stagger">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 stagger">
           <For each={props.watchlist().slice(0, 6)}>
             {(m) => <MovieCard movie={m} onClick={() => props.openMovie(m.id)} />}
           </For>

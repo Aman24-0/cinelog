@@ -76,11 +76,11 @@ export function SearchModal(props) {
   };
 
   return (
-    <div class="fixed inset-0 bg-black/70 backdrop-blur-md p-4 pt-16 sm:pt-24 z-[999999] flex justify-center items-start animate-fade-in" onClick={props.onClose}>
+    <div class="fixed inset-0 bg-black/70 backdrop-blur-md p-4 pt-16 sm:pt-24 z-[999999] flex justify-center items-center animate-fade-in" onClick={props.onClose}>
       <div class="w-full max-w-2xl mx-auto glass-surface rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.7)] overflow-hidden flex flex-col max-h-[75vh] border border-white/10 animate-pop-in bg-[#08090b]/95" onClick={e => e.stopPropagation()}>
 
         {/* Search Input */}
-        <div class="p-5 border-b border-white/5 flex gap-4 items-center bg-gradient-to-b from-white/5 to-transparent">
+        <div class="p-5 lg:p-8 border-b border-white/5 flex gap-4 items-center bg-gradient-to-b from-white/5 to-transparent">
           <Icon name="search" class="text-[var(--primary)] text-2xl"/>
           <input
             autofocus

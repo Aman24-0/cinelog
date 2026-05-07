@@ -18,11 +18,11 @@ import { InsightsModal, SettingsModal } from './modals/Modals';
 const NavBtn = (props) => (
   <button
     onClick={props.onClick}
-    class="flex flex-col items-center gap-1 w-14 transition-all"
+    class="flex flex-col lg:flex-row items-center gap-1 lg:gap-4 w-14 lg:w-full lg:px-4 lg:py-3 lg:rounded-xl lg:hover:bg-white/5 transition-all"
     style={props.active ? 'color: var(--p)' : 'color: var(--dim)'}
   >
     <Icon name={props.icon} fill={props.active} />
-    <span class="label-mono" style="font-size: 8px; letter-spacing: 0.12em">{props.label}</span>
+    <span class="label-mono lg:text-[10px] lg:font-bold lg:uppercase lg:tracking-[0.2em]">{props.label}</span>
   </button>
 );
 
@@ -91,7 +91,7 @@ export default function App() {
         <button onClick={() => window.location.reload()} class="px-6 py-3 rounded-full font-bold text-black text-sm" style="background: var(--p)">Reload App</button>
       </div>
     )}>
-    <div class="cinelog-root min-h-screen pb-32" onClick={() => setUserMenuOpen(false)}>
+    <div class="cinelog-root min-h-screen pb-32 lg:pb-0 lg:pl-64" onClick={() => setUserMenuOpen(false)}>
       <div class="orb-primary" />
       <div class="orb-secondary" />
 
@@ -173,7 +173,7 @@ export default function App() {
           </header>
 
           {/* ── MAIN ── */}
-          <main class="p-5 max-w-2xl mx-auto relative z-10">
+          <main class="p-5 max-w-2xl lg:max-w-none lg:px-12 mx-auto relative z-10">
             <Show when={view() === 'dashboard'}>
               <Dashboard watchlist={watchlist} openMovie={setDetailsId} setView={setView} showToast={showToast} setActiveVaultStatus={setActiveVaultStatus} />
             </Show>
@@ -192,19 +192,20 @@ export default function App() {
           </main>
 
           {/* ── BOTTOM NAV ── */}
-          <div class="fixed bottom-6 left-0 w-full px-4 flex justify-center z-50 pointer-events-none">
-            <nav class="nav-pill w-full max-w-md flex justify-around items-center px-2 py-3 pointer-events-auto">
+          <div class="fixed bottom-6 lg:bottom-0 lg:left-0 w-full lg:w-64 px-4 lg:px-0 flex justify-center lg:h-screen z-50 pointer-events-none">
+            <nav class="nav-pill w-full max-w-md lg:max-w-none lg:h-full lg:rounded-none lg:flex-col lg:justify-start lg:gap-8 lg:pt-32 flex justify-around items-center px-2 py-3 lg:px-6 pointer-events-auto lg:border-r" style="border-color: var(--border)">
               <NavBtn icon="dashboard" label="Home" active={view() === 'dashboard'} onClick={() => setView('dashboard')} />
               <NavBtn icon="visibility" label="Vault" active={view() === 'watchlist'} onClick={() => setView('watchlist')} />
 
               {/* Center Add button */}
-              <div class="relative -mt-8 mx-1">
+              <div class="relative -mt-8 lg:mt-0 mx-1">
                 <button
                   onClick={() => setSearchModal(true)}
-                  class="w-14 h-14 rounded-full flex items-center justify-center text-black font-black border-4 active:scale-95"
+                  class="w-14 h-14 rounded-full flex items-center justify-center text-black font-black border-4 active:scale-95 lg:w-full lg:h-auto lg:py-4 lg:rounded-2xl lg:border-none lg:flex-row lg:gap-3 lg:px-6"
                   style="background: var(--p); border-color: var(--void); box-shadow: 0 0 24px var(--p-glow), 0 8px 20px rgba(0,0,0,0.5)"
                 >
-                  <Icon name="add" class="text-3xl" />
+                  <Icon name="add" class="text-3xl lg:text-xl" />
+                  <span class="hidden lg:block font-bold uppercase tracking-widest text-[10px]">Add Title</span>
                 </button>
               </div>
 
