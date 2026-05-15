@@ -1,6 +1,5 @@
-export const TMDB_KEY = import.meta.env.VITE_TMDB_API_KEY || ['415186758', 'b41cc5f8', 'c0ea969f6', 'd6c165'].join('');
-export const TMDB_BASE = '/tmdb';
-export const OMDB_KEY = import.meta.env.VITE_OMDB_API_KEY || '2a444b24';
+export const TMDB_KEY = import.meta.env.VITE_TMDB_API_KEY;
+export const OMDB_KEY = import.meta.env.VITE_OMDB_API_KEY;
 
 export const cleanPlatform = (p) => {
   if (!p) return null; const l = p.toLowerCase();
