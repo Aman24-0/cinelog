@@ -3,14 +3,16 @@ import { doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY } from '../utils';
 
-const SERVERS = [
-  { id: 'vidzee', name: 'VidZee (Fast)', icon: 'smart_display' },
-  { id: 'vidlink', name: 'VidLink', icon: 'play_circle' },
-  { id: 'vidsrcru', name: 'Vidsrc.ru', icon: 'dns' },
-  { id: 'embedsu', name: 'Embed.su', icon: 'stream' },
-  { id: 'vidsrccc', name: 'Vidsrc.cc', icon: 'dynamic_feed' },
-  { id: 'autoembed', name: 'AutoEmbed', icon: 'bolt' }
+const DEFAULT_SERVERS = [
+  { id: 'vidzee', name: 'VidZee (Fast)', domain: 'player.vidzee.wtf', icon: 'smart_display' },
+  { id: 'vidlink', name: 'VidLink', domain: 'vidlink.pro', icon: 'play_circle' },
+  { id: 'vidsrcru', name: 'Vidsrc.ru', domain: 'vidsrc.ru', icon: 'dns' },
+  { id: 'embedsu', name: 'Embed.su', domain: 'embed.su', icon: 'stream' },
+  { id: 'vidsrccc', name: 'Vidsrc.cc', domain: 'vidsrc.cc', icon: 'dynamic_feed' },
+  { id: 'autoembed', name: 'AutoEmbed', domain: 'autoembed.co', icon: 'bolt' }
 ];
+
+const SERVERS = DEFAULT_SERVERS;
 
 // Smart Matcher for Manual Names
 const getPlatformDict = (title, platformName) => {
