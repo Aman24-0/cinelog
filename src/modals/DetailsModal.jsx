@@ -1,15 +1,58 @@
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
-import { doc, updateDoc, deleteDoc, setDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY } from '../utils';
 
 const DEFAULT_SERVERS = [
-  { id: 'vidzee', name: 'VidZee (Fast)', domain: 'player.vidzee.wtf', icon: 'smart_display' },
-  { id: 'vidlink', name: 'VidLink', domain: 'vidlink.pro', icon: 'play_circle' },
-  { id: 'vidsrcru', name: 'Vidsrc.ru', domain: 'vidsrc.ru', icon: 'dns' },
-  { id: 'embedsu', name: 'Embed.su', domain: 'embed.su', icon: 'stream' },
-  { id: 'vidsrccc', name: 'Vidsrc.cc', domain: 'vidsrc.cc', icon: 'dynamic_feed' },
-  { id: 'autoembed', name: 'AutoEmbed', domain: 'autoembed.co', icon: 'bolt' }
+  { 
+    id: 'vidzee', 
+    name: 'VidZee (Fast)', 
+    movieUrl: 'https://player.vidzee.wtf/embed/movie/{id}',
+    tvUrl: 'https://player.vidzee.wtf/embed/tv/{id}/{season}/{episode}',
+    icon: 'smart_display'
+  },
+  { 
+    id: 'vidlink', 
+    name: 'VidLink', 
+    movieUrl: 'https://vidlink.pro/movie/{id}?primaryColor=b1a1ff&autoplay=false',
+    tvUrl: 'https://vidlink.pro/tv/{id}/{season}/{episode}?primaryColor=b1a1ff&autoplay=false',
+    icon: 'play_circle'
+  },
+  { 
+    id: 'vidsrcru', 
+    name: 'Vidsrc.ru', 
+    movieUrl: 'https://vidsrc.ru/movie/{id}?autoplay=true&colour=b1a1ff',
+    tvUrl: 'https://vidsrc.ru/tv/{id}/{season}/{episode}?autoplay=true&colour=b1a1ff&autonextepisode=true',
+    icon: 'dns'
+  },
+  { 
+    id: 'embedsu', 
+    name: 'Embed.su', 
+    movieUrl: 'https://embed.su/embed/movie/{id}',
+    tvUrl: 'https://embed.su/embed/tv/{id}/{season}/{episode}',
+    icon: 'stream'
+  },
+  { 
+    id: 'vidsrccc', 
+    name: 'Vidsrc.cc', 
+    movieUrl: 'https://vidsrc.cc/v2/embed/movie/{id}',
+    tvUrl: 'https://vidsrc.cc/v2/embed/tv/{id}/{season}/{episode}',
+    icon: 'dynamic_feed'
+  },
+  { 
+    id: 'autoembed', 
+    name: 'AutoEmbed', 
+    movieUrl: 'https://autoembed.co/movie/tmdb/{id}',
+    tvUrl: 'https://autoembed.co/tv/tmdb/{id}-{season}-{episode}',
+    icon: 'bolt'
+  },
+  {
+    id: 'vidnest',
+    name: 'VidNest (Official)',
+    movieUrl: 'https://vidnest.fun/movie/{id}?server=gama',
+    tvUrl: 'https://vidnest.fun/tv/{id}/{season}/{episode}?server=gama',
+    icon: 'play_circle'
+  }
 ];
 
 const SERVERS = DEFAULT_SERVERS;
@@ -78,6 +121,7 @@ export function DetailsModal(props) {
   const [form, setForm] = createSignal({ status: '', rating: '', watchDate: '', notes: '', region: '', season: 1, episode: 1, tag: '', platforms: '', genres: '' });
   
   const [richPlatforms, setRichPlatforms] = createSignal([]);
+  const [customServers, setCustomServers] = createSignal({});
   const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
   
   const handleVidZeeMessages = (event) => {
@@ -87,6 +131,16 @@ export function DetailsModal(props) {
       localStorage.setItem('vidZeeProgress', JSON.stringify(mediaData));
     }
   };
+
+  onMount(async () => {
+    try {
+      const userDoc = await getDoc(doc(db, 'users', props.uid || 'unknown'));
+      const customSettings = userDoc.data()?.customServers || {};
+      setCustomServers(customSettings);
+    } catch (e) {
+      console.error('Failed to load custom servers:', e);
+    }
+  });
 
   onMount(() => { 
       document.body.style.overflow = 'hidden'; 
@@ -255,18 +309,29 @@ export function DetailsModal(props) {
   };
   
   const getStreamUrl = (serverId) => { 
-      const id = movie().id; const s = movie().season || 1; const e = movie().episode || 1; 
-      const type = movie().media_type === 'tv' ? 'tv' : 'movie';
-      
-      switch(serverId) {
-          case 'vidzee': return type === 'tv' ? `https://player.vidzee.wtf/embed/tv/${id}/${s}/${e}` : `https://player.vidzee.wtf/embed/movie/${id}`;
-          case 'vidlink': return type === 'tv' ? `https://vidlink.pro/tv/${id}/${s}/${e}?primaryColor=b1a1ff&autoplay=false` : `https://vidlink.pro/movie/${id}?primaryColor=b1a1ff&autoplay=false`;
-          case 'vidsrcru': return type === 'tv' ? `https://vidsrc.ru/tv/${id}/${s}/${e}?autoplay=true&colour=b1a1ff&autonextepisode=true&backbutton=https://vidsrc.ru/&logo=https://vidsrc.ru/logo.png` : `https://vidsrc.ru/movie/${id}?autoplay=true&colour=b1a1ff&backbutton=https://vidsrc.ru/&logo=https://vidsrc.ru/logo.png`;
-          case 'embedsu': return type === 'tv' ? `https://embed.su/embed/tv/${id}/${s}/${e}` : `https://embed.su/embed/movie/${id}`;
-          case 'vidsrccc': return type === 'tv' ? `https://vidsrc.cc/v2/embed/tv/${id}/${s}/${e}` : `https://vidsrc.cc/v2/embed/movie/${id}`;
-          case 'autoembed': return type === 'tv' ? `https://autoembed.co/tv/tmdb/${id}-${s}-${e}` : `https://autoembed.co/movie/tmdb/${id}`;
-          default: return '';
-      }
+    const id = movie().id; 
+    const s = movie().season || 1; 
+    const e = movie().episode || 1; 
+    const type = movie().media_type === 'tv' ? 'tv' : 'movie';
+    
+    // Get custom server settings or fall back to default
+    const customServer = customServers()[serverId];
+    const defaultServer = DEFAULT_SERVERS.find(srv => srv.id === serverId);
+    
+    if (!defaultServer) return '';
+    
+    // Use custom URL if available, otherwise use default
+    const urlTemplate = type === 'tv' 
+      ? (customServer?.tvUrl || defaultServer.tvUrl)
+      : (customServer?.movieUrl || defaultServer.movieUrl);
+    
+    // Replace placeholders in URL template
+    let url = urlTemplate
+      .replace('{id}', id)
+      .replace('{season}', s)
+      .replace('{episode}', e);
+    
+    return url;
   };
 
   return (
