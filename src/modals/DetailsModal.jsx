@@ -49,8 +49,8 @@ const DEFAULT_SERVERS = [
   {
     id: 'vidnest',
     name: 'VidNest (Official)',
-    movieUrl: 'https://vidnest.fun/movie/{id}?server=gama',
-    tvUrl: 'https://vidnest.fun/tv/{id}/{season}/{episode}?server=gama',
+    movieUrl: 'https://vidnest.fun/movie/{id}',
+    tvUrl: 'https://vidnest.fun/tv/{id}/{season}/{episode}',
     icon: 'play_circle'
   }
 ];
@@ -325,11 +325,11 @@ export function DetailsModal(props) {
       ? (customServer?.tvUrl || defaultServer.tvUrl)
       : (customServer?.movieUrl || defaultServer.movieUrl);
     
-    // Replace placeholders in URL template
+    // Safely replace both formats: {id} or [TMDB_ID]
     let url = urlTemplate
-      .replace('{id}', id)
-      .replace('{season}', s)
-      .replace('{episode}', e);
+      .replace(/\{id\}|\[TMDB_ID\]/gi, id)
+      .replace(/\{season\}|\[SEASON\]/gi, s)
+      .replace(/\{episode\}|\[EPISODE\]/gi, e);
     
     return url;
   };
