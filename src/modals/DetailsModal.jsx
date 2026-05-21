@@ -4,64 +4,18 @@ import { db } from '../firebase';
 import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY } from '../utils';
 
 const DEFAULT_SERVERS = [
-  { 
-    id: 'vidzee', 
-    name: 'VidZee (Fast)', 
-    movieUrl: 'https://player.vidzee.wtf/embed/movie/{id}',
-    tvUrl: 'https://player.vidzee.wtf/embed/tv/{id}/{season}/{episode}',
-    icon: 'smart_display'
-  },
-  { 
-    id: 'vidlink', 
-    name: 'VidLink', 
-    movieUrl: 'https://vidlink.pro/movie/{id}?primaryColor=b1a1ff&autoplay=false',
-    tvUrl: 'https://vidlink.pro/tv/{id}/{season}/{episode}?primaryColor=b1a1ff&autoplay=false',
-    icon: 'play_circle'
-  },
-  { 
-    id: 'vidsrcru', 
-    name: 'Vidsrc.ru', 
-    movieUrl: 'https://vidsrc.ru/movie/{id}?autoplay=true&colour=b1a1ff',
-    tvUrl: 'https://vidsrc.ru/tv/{id}/{season}/{episode}?autoplay=true&colour=b1a1ff&autonextepisode=true',
-    icon: 'dns'
-  },
-  { 
-    id: 'peachify', 
-    name: 'Peachify', 
-    movieUrl: 'https://peachify.top/embed/movie/{id}?accent=b1a1ff',
-    tvUrl: 'https://peachify.top/embed/tv/{id}/{season}/{episode}?accent=b1a1ff',
-    icon: 'stream'
-  },
-  { 
-    id: 'vidsrccc', 
-    name: 'Vidsrc.cc', 
-    movieUrl: 'https://vidsrc.cc/v2/embed/movie/{id}',
-    tvUrl: 'https://vidsrc.cc/v2/embed/tv/{id}/{season}/{episode}',
-    icon: 'dynamic_feed'
-  },
-  { 
-    id: 'autoembed', 
-    name: 'AutoEmbed', 
-    movieUrl: 'https://autoembed.co/movie/tmdb/{id}',
-    tvUrl: 'https://autoembed.co/tv/tmdb/{id}-{season}-{episode}',
-    icon: 'bolt'
-  },
-  {
-    id: 'vidnest',
-    name: 'VidNest (Official)',
-    movieUrl: 'https://vidnest.fun/movie/{id}',
-    tvUrl: 'https://vidnest.fun/tv/{id}/{season}/{episode}',
-    icon: 'play_circle'
-  }
+  { id: 'vidzee', name: 'VidZee (Fast)', movieUrl: 'https://player.vidzee.wtf/embed/movie/{id}', tvUrl: 'https://player.vidzee.wtf/embed/tv/{id}/{season}/{episode}', icon: 'smart_display' },
+  { id: 'vidlink', name: 'VidLink', movieUrl: 'https://vidlink.pro/movie/{id}?primaryColor=b1a1ff&autoplay=false', tvUrl: 'https://vidlink.pro/tv/{id}/{season}/{episode}?primaryColor=b1a1ff&autoplay=false', icon: 'play_circle' },
+  { id: 'vidsrcru', name: 'Vidsrc.ru', movieUrl: 'https://vidsrc.ru/movie/{id}?autoplay=true&colour=b1a1ff', tvUrl: 'https://vidsrc.ru/tv/{id}/{season}/{episode}?autoplay=true&colour=b1a1ff&autonextepisode=true', icon: 'dns' },
+  { id: 'peachify', name: 'Peachify', movieUrl: 'https://peachify.top/embed/movie/{id}?accent=b1a1ff', tvUrl: 'https://peachify.top/embed/tv/{id}/{season}/{episode}?accent=b1a1ff', icon: 'stream' },
+  { id: 'vidsrccc', name: 'Vidsrc.cc', movieUrl: 'https://vidsrc.cc/v2/embed/movie/{id}', tvUrl: 'https://vidsrc.cc/v2/embed/tv/{id}/{season}/{episode}', icon: 'dynamic_feed' },
+  { id: 'autoembed', name: 'AutoEmbed', movieUrl: 'https://autoembed.co/movie/tmdb/{id}', tvUrl: 'https://autoembed.co/tv/tmdb/{id}-{season}-{episode}', icon: 'bolt' },
+  { id: 'vidnest', name: 'VidNest (Official)', movieUrl: 'https://vidnest.fun/movie/{id}', tvUrl: 'https://vidnest.fun/tv/{id}/{season}/{episode}', icon: 'play_circle' }
 ];
 
-const SERVERS = DEFAULT_SERVERS;
-
-// Smart Matcher for Manual Names
 const getPlatformDict = (title, platformName) => {
     const enc = encodeURIComponent(title || '');
     const cleanN = platformName ? platformName.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
-    
     const dbData = {
         'netflix': { name: 'Netflix', logo: 'https://image.tmdb.org/t/p/w92/t2yyOv40HZeVlLjVrCsPhIdZfC4.jpg', url: `https://www.netflix.com/search?q=${enc}` },
         'amazonprimevideo': { name: 'Amazon Prime Video', logo: 'https://image.tmdb.org/t/p/w92/5NyLm42TmCqCMOZFvH4fvn2FI11.jpg', url: `https://www.primevideo.com/search/ref=atv_sr_sug_sc?phrase=${enc}` },
@@ -78,7 +32,6 @@ const getPlatformDict = (title, platformName) => {
     return dbData[cleanN] || null;
 };
 
-// Brand Color Generator for Custom CSS Avatars
 const getBrandColor = (name) => {
     const n = name.toLowerCase();
     if(n.includes('vi ')) return '#ed1c24'; 
@@ -92,7 +45,6 @@ const getBrandColor = (name) => {
     if(n.includes('eros')) return '#ff0000'; 
     if(n.includes('apple')) return '#ffffff'; 
     if(n.includes('discovery')) return '#001e61'; 
-    
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return `hsl(${Math.abs(hash) % 360}, 70%, 45%)`;
@@ -100,46 +52,70 @@ const getBrandColor = (name) => {
 
 export function DetailsModal(props) {
   const isPreview = createMemo(() => typeof props.id === 'string' && props.id.startsWith('PREVIEW_'));
-  const previewData = createMemo(() => {
-    if (!isPreview()) return null;
-    try { return JSON.parse(props.id.replace('PREVIEW_', '')); } catch(e) { return null; }
-  });
-
-  const movie = createMemo(() => {
-    if (isPreview()) return previewData();
-    return props.watchlist.find(m => String(m.id) === String(props.id));
-  });
+  const previewData = createMemo(() => { if (!isPreview()) return null; try { return JSON.parse(props.id.replace('PREVIEW_', '')); } catch(e) { return null; } });
+  const movie = createMemo(() => isPreview() ? previewData() : props.watchlist.find(m => String(m.id) === String(props.id)));
   
   const [details, setDetails] = createSignal({});
   const [isEdit, setIsEdit] = createSignal(false); 
   const [trailerKey, setTrailerKey] = createSignal(null); 
   const [playTrailer, setPlayTrailer] = createSignal(false);
   const [showPlayer, setShowPlayer] = createSignal(false); 
-  const [activeServer, setActiveServer] = createSignal('vidzee'); 
+  const [activeServer, setActiveServer] = createSignal(null); 
   const [omdbData, setOmdbData] = createSignal({ imdb: '-', rt: '-' });
   const [form, setForm] = createSignal({ status: '', rating: '', watchDate: '', notes: '', region: '', season: 1, episode: 1, tag: '', platforms: '', genres: '' });
   
   const [richPlatforms, setRichPlatforms] = createSignal([]);
   const [customServers, setCustomServers] = createSignal({});
   const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
+
+  // DYNAMIC SERVER BUILDER
+  const availableServers = createMemo(() => {
+    const custom = customServers();
+    const merged = [];
+    
+    // Process Default Providers
+    DEFAULT_SERVERS.forEach(s => {
+      const overrides = custom[s.id];
+      if (!overrides || overrides.enabled !== false) {
+        merged.push({
+          ...s,
+          name: overrides?.name || s.name,
+          movieUrl: overrides?.movieUrl || s.movieUrl,
+          tvUrl: overrides?.tvUrl || s.tvUrl
+        });
+      }
+    });
+
+    // Process Custom-Added Providers
+    Object.keys(custom).forEach(key => {
+      if (!DEFAULT_SERVERS.find(s => s.id === key) && custom[key].enabled !== false) {
+        merged.push({
+          id: key,
+          name: custom[key].name || 'Custom Server',
+          movieUrl: custom[key].movieUrl || '',
+          tvUrl: custom[key].tvUrl || '',
+          icon: 'add_link'
+        });
+      }
+    });
+
+    return merged;
+  });
+
+  // Ensure activeServer defaults properly if old selection is missing
+  createEffect(() => {
+    const serversList = availableServers();
+    if (serversList.length > 0 && !serversList.find(s => s.id === activeServer())) {
+      setActiveServer(serversList[0].id);
+    }
+  });
   
   const handlePlayerMessages = (event) => {
-    // VidZee Message Sync
     if (event.origin === 'https://player.vidzee.wtf') {
-      if (event.data?.type === 'MEDIA_DATA') {
-        localStorage.setItem('vidZeeProgress', JSON.stringify(event.data.data));
-      }
+      if (event.data?.type === 'MEDIA_DATA') localStorage.setItem('vidZeeProgress', JSON.stringify(event.data.data));
     }
-    
-    // Peachify Message Sync & Events
     if (event.origin === 'https://peachify.top') {
-      if (event.data?.type === 'MEDIA_DATA') {
-        localStorage.setItem('peachifyProgress', JSON.stringify(event.data.data));
-      }
-      if (event.data?.type === 'PLAYER_EVENT') {
-        const { event: playerEvent, currentTime, duration } = event.data.data;
-        // console.log(`[Peachify] ${playerEvent} @ ${currentTime}s / ${duration}s`);
-      }
+      if (event.data?.type === 'MEDIA_DATA') localStorage.setItem('peachifyProgress', JSON.stringify(event.data.data));
     }
   };
 
@@ -153,15 +129,8 @@ export function DetailsModal(props) {
     }
   });
 
-  onMount(() => { 
-      document.body.style.overflow = 'hidden'; 
-      window.addEventListener('message', handlePlayerMessages);
-  }); 
-  
-  onCleanup(() => { 
-      document.body.style.overflow = ''; 
-      window.removeEventListener('message', handlePlayerMessages);
-  });
+  onMount(() => { document.body.style.overflow = 'hidden'; window.addEventListener('message', handlePlayerMessages); }); 
+  onCleanup(() => { document.body.style.overflow = ''; window.removeEventListener('message', handlePlayerMessages); });
   
   const allAvailablePlatforms = createMemo(() => [...new Set(props.watchlist.flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort());
 
@@ -177,9 +146,7 @@ export function DetailsModal(props) {
               if (!isPreview() && d.genres && d.genres.length > 0) {
                   const apiGenres = d.genres.map(g => g.name).join(', ');
                   const dbGenres = getSafeGenres(movie()).join(', ');
-                  if (!dbGenres) {
-                      setForm(f => ({ ...f, genres: apiGenres }));
-                  }
+                  if (!dbGenres) setForm(f => ({ ...f, genres: apiGenres }));
               }
           });
 
@@ -198,7 +165,6 @@ export function DetailsModal(props) {
                   const wmType = movie().media_type === 'tv' ? 'tv' : 'movie';
                   const wmRes = await fetch(`https://api.watchmode.com/v1/title/${wmType}-${movie().id}/sources/?apiKey=${WATCHMODE_KEY}&regions=IN,US`);
                   const wmSources = await wmRes.json();
-                  
                   if(Array.isArray(wmSources) && wmSources.length > 0) {
                       const seen = new Set();
                       for(let s of wmSources) {
@@ -215,7 +181,6 @@ export function DetailsModal(props) {
                       const tmdbRes = await fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}/watch/providers?api_key=${TMDB_KEY}`);
                       const tmdbData = await tmdbRes.json();
                       const inData = tmdbData.results?.IN || tmdbData.results?.US; 
-                      
                       if(inData && (inData.flatrate || inData.free || inData.ads)) {
                           const raw = [...(inData.flatrate||[]), ...(inData.free||[]), ...(inData.ads||[])];
                           apiProviders = raw.map(p => {
@@ -240,7 +205,6 @@ export function DetailsModal(props) {
 
               const currentDbPlatforms = movie().platformsList || [];
               const fetchedNames = finalProviders.map(p => p.name);
-              
               currentDbPlatforms.forEach(p => {
                   const cleanP = cleanPlatform(p);
                   if (!fetchedNames.includes(cleanP)) {
@@ -248,19 +212,13 @@ export function DetailsModal(props) {
                       if (pData) {
                           finalProviders.push({ name: pData.name, logo: pData.logo, url: pData.url });
                       } else {
-                          finalProviders.push({ 
-                              name: cleanP, 
-                              isCss: true,
-                              color: getBrandColor(cleanP),
-                              url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}` 
-                          });
+                          finalProviders.push({ name: cleanP, isCss: true, color: getBrandColor(cleanP), url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}` });
                       }
                       fetchedNames.push(cleanP); 
                   }
               });
 
               setRichPlatforms(finalProviders);
-
               if (!isPreview()) {
                   const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n));
                   if(missingInDb.length > 0) {
@@ -282,24 +240,14 @@ export function DetailsModal(props) {
 
   const addToVaultFromPreview = async () => {
     const item = movie();
-    if (props.watchlist.some(w => String(w.id) === String(item.id))) {
-      return props.showToast("Already in Vault! 🍿");
-    }
+    if (props.watchlist.some(w => String(w.id) === String(item.id))) return props.showToast("Already in Vault! 🍿");
     props.showToast("Adding to Vault...");
     try {
       const castNames = details().credits?.cast?.slice(0, 5).map(c => c.name) || [];
       const director = details().credits?.crew?.find(c => c.job === 'Director')?.name || '';
       const castList = [...castNames, director].filter(Boolean);
       await setDoc(doc(db, 'users', props.uid, 'watchlist', String(item.id)), {
-        id: String(item.id),
-        title: item.title || item.name,
-        media_type: item.media_type || 'movie',
-        poster_path: item.poster_path,
-        backdrop_path: item.backdrop_path,
-        release_date: item.release_date || item.first_air_date || '',
-        status: 'Planned',
-        addedAt: new Date(),
-        castList: castList
+        id: String(item.id), title: item.title || item.name, media_type: item.media_type || 'movie', poster_path: item.poster_path, backdrop_path: item.backdrop_path, release_date: item.release_date || item.first_air_date || '', status: 'Planned', addedAt: new Date(), castList: castList
       });
       props.showToast("Added to Vault! 🍿");
       props.onClose();
@@ -309,26 +257,22 @@ export function DetailsModal(props) {
   };
   
   const getStreamUrl = (serverId) => { 
+    if (!serverId) return '';
     const id = movie().id; 
     const s = movie().season || 1; 
     const e = movie().episode || 1; 
     const type = movie().media_type === 'tv' ? 'tv' : 'movie';
     
-    const customServer = customServers()[serverId];
-    const defaultServer = DEFAULT_SERVERS.find(srv => srv.id === serverId);
+    // Now searches the dynamically merged list
+    const serverConfig = availableServers().find(srv => srv.id === serverId);
+    if (!serverConfig) return '';
     
-    if (!defaultServer) return '';
+    const urlTemplate = type === 'tv' ? serverConfig.tvUrl : serverConfig.movieUrl;
     
-    const urlTemplate = type === 'tv' 
-      ? (customServer?.tvUrl || defaultServer.tvUrl)
-      : (customServer?.movieUrl || defaultServer.movieUrl);
-    
-    let url = urlTemplate
+    return (urlTemplate || '')
       .replace(/\{id\}|\[TMDB_ID\]/gi, id)
       .replace(/\{season\}|\[SEASON\]/gi, s)
       .replace(/\{episode\}|\[EPISODE\]/gi, e);
-    
-    return url;
   };
 
   return (
@@ -386,7 +330,8 @@ export function DetailsModal(props) {
                             <span class="text-[9px] uppercase font-black text-gray-400 tracking-widest flex items-center gap-1.5"><Icon name="router" class="text-[12px] text-[var(--primary)]"/> Streaming Node</span>
                         </div>
                         <div class="flex flex-wrap gap-2 pb-2 px-1">
-                            <For each={SERVERS}>{(srv) => (
+                            {/* Uses dynamic availableServers list here */}
+                            <For each={availableServers()}>{(srv) => (
                                 <button type="button" onClick={(e) => { e.stopPropagation(); setActiveServer(srv.id); }}
                                   class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all"
                                   style={activeServer() === srv.id
@@ -472,10 +417,7 @@ export function DetailsModal(props) {
                     </div>
 
                     <Show when={isPreview()}>
-                        <button
-                            onClick={addToVaultFromPreview}
-                            class="w-full mt-6 bg-gradient-to-r from-[var(--secondary)] to-[var(--primary)] text-[#0c0e14] font-black py-4 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-[var(--primary)]/20 flex items-center justify-center gap-2"
-                        >
+                        <button onClick={addToVaultFromPreview} class="w-full mt-6 bg-gradient-to-r from-[var(--secondary)] to-[var(--primary)] text-[#0c0e14] font-black py-4 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-[var(--primary)]/20 flex items-center justify-center gap-2">
                             <Icon name="add_circle" class="text-lg"/> Add to My Universe
                         </button>
                     </Show>
@@ -519,7 +461,8 @@ export function DetailsModal(props) {
                 <div class="relative bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 flex items-center gap-1 hover:bg-white/10 transition-colors">
                     <Icon name="router" class="text-gray-400 text-[14px]" />
                     <select value={activeServer()} onChange={(e) => { e.stopPropagation(); setActiveServer(e.target.value); }} class="bg-transparent text-[10px] font-black uppercase tracking-widest text-[var(--primary)] outline-none appearance-none cursor-pointer pr-4 pl-1">
-                        <For each={SERVERS}>{(srv) => <option value={srv.id} class="bg-[#0c0e14] text-white">{srv.name}</option>}</For>
+                        {/* Dropdown also uses dynamically merged server list */}
+                        <For each={availableServers()}>{(srv) => <option value={srv.id} class="bg-[#0c0e14] text-white">{srv.name}</option>}</For>
                     </select>
                     <Icon name="expand_more" class="text-gray-400 text-[14px] absolute right-1 pointer-events-none" />
                 </div>
