@@ -26,10 +26,10 @@ const DEFAULT_SERVERS = [
     icon: 'dns'
   },
   { 
-    id: 'embedsu', 
-    name: 'Embed.su', 
-    movieUrl: 'https://embed.su/embed/movie/{id}',
-    tvUrl: 'https://embed.su/embed/tv/{id}/{season}/{episode}',
+    id: 'peachify', 
+    name: 'Peachify', 
+    movieUrl: 'https://peachify.top/embed/movie/{id}?accent=b1a1ff',
+    tvUrl: 'https://peachify.top/embed/tv/{id}/{season}/{episode}?accent=b1a1ff',
     icon: 'stream'
   },
   { 
@@ -81,26 +81,24 @@ const getPlatformDict = (title, platformName) => {
 // Brand Color Generator for Custom CSS Avatars
 const getBrandColor = (name) => {
     const n = name.toLowerCase();
-    if(n.includes('vi ')) return '#ed1c24'; // Red for Vi
-    if(n.includes('aha')) return '#ff6600'; // Orange for Aha
-    if(n.includes('hoichoi')) return '#e50b14'; // Red for Hoichoi
-    if(n.includes('sun')) return '#f09a36'; // Yellow-Orange for SunNXT
-    if(n.includes('voot')) return '#5a2282'; // Purple for Voot
-    if(n.includes('mx')) return '#003366'; // Blue for MX Player
-    if(n.includes('ullu')) return '#00b0b8'; // Teal for Ullu
-    if(n.includes('alt')) return '#e30f1d'; // Red for ALTBalaji
-    if(n.includes('eros')) return '#ff0000'; // Red for Eros Now
-    if(n.includes('apple')) return '#ffffff'; // White for Apple
-    if(n.includes('discovery')) return '#001e61'; // Navy Blue for Discovery+
+    if(n.includes('vi ')) return '#ed1c24'; 
+    if(n.includes('aha')) return '#ff6600'; 
+    if(n.includes('hoichoi')) return '#e50b14'; 
+    if(n.includes('sun')) return '#f09a36'; 
+    if(n.includes('voot')) return '#5a2282'; 
+    if(n.includes('mx')) return '#003366'; 
+    if(n.includes('ullu')) return '#00b0b8'; 
+    if(n.includes('alt')) return '#e30f1d'; 
+    if(n.includes('eros')) return '#ff0000'; 
+    if(n.includes('apple')) return '#ffffff'; 
+    if(n.includes('discovery')) return '#001e61'; 
     
-    // Deterministic Fallback Color based on string hash
     let hash = 0;
     for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return `hsl(${Math.abs(hash) % 360}, 70%, 45%)`;
 };
 
 export function DetailsModal(props) {
-  // PREVIEW MODE: id starts with "PREVIEW_" — item directly passed via JSON
   const isPreview = createMemo(() => typeof props.id === 'string' && props.id.startsWith('PREVIEW_'));
   const previewData = createMemo(() => {
     if (!isPreview()) return null;
@@ -111,6 +109,7 @@ export function DetailsModal(props) {
     if (isPreview()) return previewData();
     return props.watchlist.find(m => String(m.id) === String(props.id));
   });
+  
   const [details, setDetails] = createSignal({});
   const [isEdit, setIsEdit] = createSignal(false); 
   const [trailerKey, setTrailerKey] = createSignal(null); 
@@ -124,11 +123,23 @@ export function DetailsModal(props) {
   const [customServers, setCustomServers] = createSignal({});
   const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
   
-  const handleVidZeeMessages = (event) => {
-    if (event.origin !== 'https://player.vidzee.wtf') return;
-    if (event.data?.type === 'MEDIA_DATA') {
-      const mediaData = event.data.data;
-      localStorage.setItem('vidZeeProgress', JSON.stringify(mediaData));
+  const handlePlayerMessages = (event) => {
+    // VidZee Message Sync
+    if (event.origin === 'https://player.vidzee.wtf') {
+      if (event.data?.type === 'MEDIA_DATA') {
+        localStorage.setItem('vidZeeProgress', JSON.stringify(event.data.data));
+      }
+    }
+    
+    // Peachify Message Sync & Events
+    if (event.origin === 'https://peachify.top') {
+      if (event.data?.type === 'MEDIA_DATA') {
+        localStorage.setItem('peachifyProgress', JSON.stringify(event.data.data));
+      }
+      if (event.data?.type === 'PLAYER_EVENT') {
+        const { event: playerEvent, currentTime, duration } = event.data.data;
+        // console.log(`[Peachify] ${playerEvent} @ ${currentTime}s / ${duration}s`);
+      }
     }
   };
 
@@ -144,19 +155,18 @@ export function DetailsModal(props) {
 
   onMount(() => { 
       document.body.style.overflow = 'hidden'; 
-      window.addEventListener('message', handleVidZeeMessages);
+      window.addEventListener('message', handlePlayerMessages);
   }); 
   
   onCleanup(() => { 
       document.body.style.overflow = ''; 
-      window.removeEventListener('message', handleVidZeeMessages);
+      window.removeEventListener('message', handlePlayerMessages);
   });
   
   const allAvailablePlatforms = createMemo(() => [...new Set(props.watchlist.flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort());
 
   createEffect(() => { 
       if(movie()) { 
-          // Form sirf non-preview mein set karo
           if (!isPreview()) {
               setForm({ status: movie().status||'Planned', rating: movie().rating||'', watchDate: typeof movie().watchDate==='string'?movie().watchDate:'', notes: typeof movie().notes==='string'?movie().notes:'', region: movie().region||'International', season: movie().season||1, episode: movie().episode||1, tag: movie().tag||'', platforms: getSafePlatforms(movie()).join(', '), genres: getSafeGenres(movie()).join(', ') });
           }
@@ -164,11 +174,9 @@ export function DetailsModal(props) {
           fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}?api_key=${TMDB_KEY}&append_to_response=videos,credits`).then(r=>r.json()).then(d=>{ 
               setDetails(d);
               const v = d?.videos?.results; if(v){ let t = v.find(x=>x.site==='YouTube'&&x.type==='Trailer')||v.find(x=>x.site==='YouTube'&&x.type==='Teaser')||v.find(x=>x.site==='YouTube'); if(t) setTrailerKey(t.key); }
-              // Fix 3: Agar API se genres mile aur form mein genres khaali hain toh update karo
               if (!isPreview() && d.genres && d.genres.length > 0) {
                   const apiGenres = d.genres.map(g => g.name).join(', ');
                   const dbGenres = getSafeGenres(movie()).join(', ');
-                  // DB mein genres nahi hain ya API se zyada accurate hain
                   if (!dbGenres) {
                       setForm(f => ({ ...f, genres: apiGenres }));
                   }
@@ -180,14 +188,12 @@ export function DetailsModal(props) {
               if(d.Response === 'True') {
                   const rt = d.Ratings?.find(r=>r.Source === 'Rotten Tomatoes')?.Value || '-';
                   setOmdbData({ imdb: d.imdbRating || '-', rt: rt });
-                  // Preview mein DB update mat karo
                   if (!isPreview()) updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { imdbRating: d.imdbRating || '-', rtRating: rt.replace('%','') });
               }
           });
 
           const fetchProviders = async () => {
               let apiProviders = [];
-
               try {
                   const wmType = movie().media_type === 'tv' ? 'tv' : 'movie';
                   const wmRes = await fetch(`https://api.watchmode.com/v1/title/${wmType}-${movie().id}/sources/?apiKey=${WATCHMODE_KEY}&regions=IN,US`);
@@ -222,7 +228,6 @@ export function DetailsModal(props) {
                   } catch(e) {}
               }
 
-              // Deduplicate API Names
               let finalProviders = [];
               const seenNames = new Set();
               apiProviders.forEach(p => {
@@ -233,19 +238,16 @@ export function DetailsModal(props) {
                   }
               });
 
-              // MIX DB (Manual/Purane) + API
               const currentDbPlatforms = movie().platformsList || [];
               const fetchedNames = finalProviders.map(p => p.name);
               
               currentDbPlatforms.forEach(p => {
                   const cleanP = cleanPlatform(p);
                   if (!fetchedNames.includes(cleanP)) {
-                      // Platform exists in DB but API didn't find it (Manually added)
                       const pData = getPlatformDict(title, cleanP);
                       if (pData) {
                           finalProviders.push({ name: pData.name, logo: pData.logo, url: pData.url });
                       } else {
-                          // SMART CSS AVATAR FIX (No more broken images)
                           finalProviders.push({ 
                               name: cleanP, 
                               isCss: true,
@@ -253,13 +255,12 @@ export function DetailsModal(props) {
                               url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}` 
                           });
                       }
-                      fetchedNames.push(cleanP); // Add to fetched names array for sync check later
+                      fetchedNames.push(cleanP); 
                   }
               });
 
               setRichPlatforms(finalProviders);
 
-              // SMART AUTO-SYNC TO DATABASE — preview mein nahi karna
               if (!isPreview()) {
                   const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n));
                   if(missingInDb.length > 0) {
@@ -279,7 +280,6 @@ export function DetailsModal(props) {
   const progressPct = createMemo(() => isCompleted() ? 100 : Math.min(((movie()?.episode||0) / (movie()?.totalEps||1)) * 100, 100));
   const movieFranchises = createMemo(() => props.franchises?.filter(f => movie()?.franchises?.[f.id] !== undefined).map(f => f.name).join(', '));
 
-  // Add to Vault from Preview (with duplicate check)
   const addToVaultFromPreview = async () => {
     const item = movie();
     if (props.watchlist.some(w => String(w.id) === String(item.id))) {
@@ -314,18 +314,15 @@ export function DetailsModal(props) {
     const e = movie().episode || 1; 
     const type = movie().media_type === 'tv' ? 'tv' : 'movie';
     
-    // Get custom server settings or fall back to default
     const customServer = customServers()[serverId];
     const defaultServer = DEFAULT_SERVERS.find(srv => srv.id === serverId);
     
     if (!defaultServer) return '';
     
-    // Use custom URL if available, otherwise use default
     const urlTemplate = type === 'tv' 
       ? (customServer?.tvUrl || defaultServer.tvUrl)
       : (customServer?.movieUrl || defaultServer.movieUrl);
     
-    // Safely replace both formats: {id} or [TMDB_ID]
     let url = urlTemplate
       .replace(/\{id\}|\[TMDB_ID\]/gi, id)
       .replace(/\{season\}|\[SEASON\]/gi, s)
@@ -360,7 +357,6 @@ export function DetailsModal(props) {
                             <Show when={details().runtime || details().episode_run_time?.[0]}> • {formatRuntime(details().runtime || details().episode_run_time?.[0])}</Show>
                         </p>
                     </div>
-                    {/* Edit button — sirf non-preview mein */}
                     <Show when={!isPreview()}>
                         <button onClick={()=>setIsEdit(!isEdit())} class={`p-2.5 rounded-full border transition-colors shrink-0 ${isEdit() ? 'bg-[var(--primary)] text-[#0c0e14] border-[var(--primary)]' : 'glass-surface text-gray-400 hover:text-white'}`}><Icon name={isEdit()?'check':'edit'} class="text-sm"/></button>
                     </Show>
@@ -384,7 +380,6 @@ export function DetailsModal(props) {
                 <Show when={isEdit()} fallback={
                   <div class="animate-fade-in">
                     
-                    {/* Streaming Node — sirf non-preview mein */}
                     <Show when={!isPreview()}>
                     <div class="mb-6 bg-black/40 backdrop-blur-md p-4 rounded-[1.5rem] border border-white/5 shadow-inner">
                         <div class="flex justify-between items-center mb-3 px-1">
@@ -407,7 +402,7 @@ export function DetailsModal(props) {
                             <Icon name="play_circle" fill class="text-[18px]"/> Watch Now
                         </button>
                     </div>
-                    </Show>{/* End of !isPreview() streaming section */}
+                    </Show>
 
                     <p class="text-gray-400 text-sm mb-6 leading-relaxed italic border-l-2 border-[var(--primary)]/30 pl-3">"{details().overview || (typeof movie().overview === 'string' ? movie().overview : 'No overview available.')}"</p>
                     
@@ -476,7 +471,6 @@ export function DetailsModal(props) {
                         <Show when={!isPreview() && movie().notes && typeof movie().notes === 'string'}><div class="border-t border-white/5 pt-3 mt-3"><p class="text-[10px] uppercase font-black text-gray-500 tracking-widest mb-1 flex items-center gap-1"><Icon name="edit_note" class="text-[14px]"/> Notes</p><p class="text-sm text-gray-300 italic">"{movie().notes}"</p></div></Show>
                     </div>
 
-                    {/* Preview: Add to Vault button | Normal: Delete button */}
                     <Show when={isPreview()}>
                         <button
                             onClick={addToVaultFromPreview}
