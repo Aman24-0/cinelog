@@ -123,6 +123,11 @@ export function UpcomingView(props) {
   });
 
   const handleAdd = async (m) => {
+    if (props.isGuest) {
+      props.showToast("Sign in to add to Vault! 🔒");
+      if (props.onLogin) props.onLogin();
+      return;
+    }
     if(props.watchlist().some(item => String(item.id) === String(m.id))) return props.showToast("Already in vault!");
     const endpoint = m.media_type === 'tv' ? 'tv' : 'movie';
     const detailRes = await fetch(`https://api.themoviedb.org/3/${endpoint}/${m.id}?api_key=${TMDB_KEY}`); const fullData = await detailRes.json();
