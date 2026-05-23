@@ -2,6 +2,7 @@ import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show }
 import { doc, updateDoc, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY } from '../utils';
+import { PersonModal } from './PersonModal';
 
 const DEFAULT_SERVERS = [
   { id: 'vidzee', name: 'VidZee (Fast)', movieUrl: 'https://player.vidzee.wtf/embed/movie/{id}', tvUrl: 'https://player.vidzee.wtf/embed/tv/{id}/{season}/{episode}', icon: 'smart_display' },
@@ -73,6 +74,7 @@ export function DetailsModal(props) {
   const [playTrailer, setPlayTrailer] = createSignal(false);
   const [showPlayer, setShowPlayer] = createSignal(false); 
   const [activeServer, setActiveServer] = createSignal(null); 
+  const [personId, setPersonId] = createSignal(null); 
   const [omdbData, setOmdbData] = createSignal({ imdb: '-', rt: '-' });
   const [form, setForm] = createSignal({ status: '', rating: '', watchDate: '', notes: '', region: '', season: 1, episode: 1, tag: '', platforms: '', genres: '', seasonDates: {} });
   
@@ -433,16 +435,16 @@ export function DetailsModal(props) {
                             <h3 class="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">Cast & Crew</h3>
                             <div class="flex gap-5 overflow-x-auto hide-scrollbar pb-2">
                                 <For each={details().credits.cast.slice(0, 8)}>{(c) => (
-                                    <div class="flex flex-col items-center min-w-[75px] shrink-0">
-                                        <img src={c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${c.name}&backgroundColor=171921`} class="w-16 h-16 rounded-full object-cover border border-white/10 mb-2 shadow-lg bg-[#171921]" />
-                                        <p class="text-[9px] font-black text-center text-white truncate w-full">{c.name}</p>
+                                    <div onClick={() => setPersonId(c.id)} class="flex flex-col items-center min-w-[75px] shrink-0 cursor-pointer group">
+                                        <img src={c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${c.name}&backgroundColor=171921`} class="w-16 h-16 rounded-full object-cover border border-white/10 mb-2 shadow-lg bg-[#171921] group-hover:border-[var(--primary)] transition-colors" />
+                                        <p class="text-[9px] font-black text-center text-white truncate w-full group-hover:text-[var(--primary)] transition-colors">{c.name}</p>
                                         <p class="text-[7px] text-gray-500 text-center uppercase truncate w-full font-bold mt-0.5">{c.character}</p>
                                     </div>
                                 )}</For>
                                 <For each={details().credits.crew.filter(x=>x.job==='Director' || x.job==='Producer').slice(0,3)}>{(c) => (
-                                    <div class="flex flex-col items-center min-w-[75px] shrink-0">
-                                        <img src={c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${c.name}&backgroundColor=171921`} class="w-16 h-16 rounded-full object-cover border border-[var(--secondary)] mb-2 shadow-lg bg-[#171921]" />
-                                        <p class="text-[9px] font-black text-center text-white truncate w-full">{c.name}</p>
+                                    <div onClick={() => setPersonId(c.id)} class="flex flex-col items-center min-w-[75px] shrink-0 cursor-pointer group">
+                                        <img src={c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${c.name}&backgroundColor=171921`} class="w-16 h-16 rounded-full object-cover border border-[var(--secondary)] mb-2 shadow-lg bg-[#171921] group-hover:border-[var(--primary)] transition-colors" />
+                                        <p class="text-[9px] font-black text-center text-white truncate w-full group-hover:text-[var(--primary)] transition-colors">{c.name}</p>
                                         <p class="text-[7px] text-[var(--secondary)] text-center uppercase font-black tracking-widest mt-0.5">{c.job}</p>
                                     </div>
                                 )}</For>
@@ -616,6 +618,28 @@ export function DetailsModal(props) {
           </div>
         </div>
       </Show>
+
+      {/* Person Modal Overlay */}
+      <Show when={personId()}>
+        <PersonModal
+          personId={personId()}
+          uid={props.uid}
+          watchlist={props.watchlist}
+          showToast={props.showToast}
+          onClose={() => setPersonId(null)}
+          openPreview={(item) => {
+            // When a movie is clicked inside the Person Profile, close it and prompt a search
+            setPersonId(null);
+            if (props.openPreview) {
+              props.openPreview(item, 'fromPerson');
+            } else {
+              props.onClose(); // Closes the current movie DetailsModal
+              props.showToast(`Search for ${item.title || item.name} to view details!`);
+            }
+          }}
+        />
+      </Show>
+
     </div>
   );
 }
