@@ -94,10 +94,21 @@ export function Vault(props) {
       </div>
 
       <Show when={filtered().length === 0}>
-        <div class="text-center p-12" style="color: var(--muted)">
-          <Icon name="sentiment_dissatisfied" class="text-5xl mb-3" />
-          <p class="font-semibold text-sm">No titles match your filters.</p>
-        </div>
+        <Show when={props.isGuest} fallback={
+          <div class="text-center p-12" style="color: var(--muted)">
+            <Icon name="sentiment_dissatisfied" class="text-5xl mb-3" />
+            <p class="font-semibold text-sm">No titles match your filters.</p>
+          </div>
+        }>
+          <div class="text-center p-12 animate-fade-in border rounded-[2rem] glass-surface" style="border-color: var(--border-active)">
+            <Icon name="video_library" class="text-6xl mb-4 opacity-50" style="color: var(--p)" />
+            <h3 class="font-headline text-3xl text-white mb-2">Your Vault is Empty</h3>
+            <p class="text-sm text-gray-400 mb-6 max-w-sm mx-auto">Sign in to start tracking movies and series, add custom tags, and build your collection.</p>
+            <button onClick={props.onLogin} class="px-8 py-3 rounded-full font-bold text-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all" style="background: var(--p); box-shadow: 0 0 16px var(--p-glow)">
+              Sign In Now
+            </button>
+          </div>
+        </Show>
       </Show>
 
       <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
