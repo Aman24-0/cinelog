@@ -31,6 +31,12 @@ export function SearchModal(props) {
 
   const addMedia = async (m, e) => {
     if (e) e.stopPropagation();
+    if (props.isGuest) {
+      props.showToast("Sign in to add to Vault! 🔒");
+      if (props.onLogin) props.onLogin();
+      return;
+    }
+
     // Duplicate check
     if (props.watchlist.some(item => String(item.id) === String(m.id))) {
       return props.showToast("Already in Vault! 🍿");
@@ -67,11 +73,8 @@ export function SearchModal(props) {
     }
   };
 
-  // openPreview — SearchModal khula rahega, PersonModal ke upar Preview khulega
   const handleOpenPreview = (item) => {
-    // PersonModal band, fir preview kholo
     setPersonId(null);
-    // Ek tick baad taaki PersonModal unmount ho
     setTimeout(() => props.openPreview(item, 'fromPerson'), 50);
   };
 
@@ -183,7 +186,7 @@ export function SearchModal(props) {
         </div>
       </div>
 
-      {/* PersonModal — Search ke upar, z-index zyada */}
+      {/* PersonModal */}
       <Show when={personId()}>
         <PersonModal
           personId={personId()}
@@ -192,6 +195,8 @@ export function SearchModal(props) {
           showToast={props.showToast}
           onClose={() => setPersonId(null)}
           openPreview={handleOpenPreview}
+          isGuest={props.isGuest}
+          onLogin={props.onLogin}
         />
       </Show>
     </div>
