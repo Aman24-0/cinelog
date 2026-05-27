@@ -1,7 +1,7 @@
 import { createSignal, createMemo, For, Show, onMount, onCleanup } from 'solid-js';
-import { doc, updateDoc, deleteDoc, writeBatch, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, deleteDoc, writeBatch, collection, addDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon } from '../utils';
+import { Icon, TMDB_KEY } from '../utils';
 
 function AddToFolderModal(props) {
   const [search, setSearch] = createSignal('');
@@ -84,6 +84,7 @@ export function FranchisesView(props) {
   const [currentFolder, setCurrentFolder] = createSignal(null);
   const [sortMode, setSortMode] = createSignal('order');
   const [showAddModal, setShowAddModal] = createSignal(false);
+  const [bulkAdding, setBulkAdding] = createSignal(false);
 
   const subFolders = createMemo(() =>
     props.franchises().filter(f => f.parentId === currentFolder()).sort((a, b) => a.name.localeCompare(b.name))
@@ -96,6 +97,7 @@ export function FranchisesView(props) {
         : a.franchises[currentFolder()] - b.franchises[currentFolder()]
     );
   });
+  const currentFolderData = createMemo(() => props.franchises().find(f => f.id === currentFolder()) || null);
 
   const createFolder = async () => {
     const n = prompt('Folder Name:');
@@ -120,6 +122,44 @@ export function FranchisesView(props) {
     delete updated[currentFolder()];
     await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(m.id)), { franchises: updated });
     props.showToast('Removed from folder');
+  };
+
+  const addMissingFromCollection = async () => {
+    const folder = currentFolderData();
+    if (!folder?.tmdbCollectionId) return;
+    setBulkAdding(true);
+    try {
+      const watchSet = new Set(props.watchlist().map(m => String(m.id)));
+      const res = await fetch(`https://api.themoviedb.org/3/collection/${folder.tmdbCollectionId}?api_key=${TMDB_KEY}`);
+      const coll = await res.json();
+      const ordered = (coll.parts || []).slice().sort((a, b) => (new Date(a.release_date || 0).getTime() || 0) - (new Date(b.release_date || 0).getTime() || 0));
+      let added = 0;
+      for (let i = 0; i < ordered.length; i++) {
+        const part = ordered[i];
+        const ref = doc(db, 'users', props.uid, 'watchlist', String(part.id));
+        const payload = { franchises: { [folder.id]: i + 1 } };
+        if (!watchSet.has(String(part.id))) {
+          payload.id = part.id;
+          payload.title = part.title || '';
+          payload.poster_path = part.poster_path || null;
+          payload.backdrop_path = part.backdrop_path || null;
+          payload.media_type = 'movie';
+          payload.status = 'Planned';
+          payload.addedAt = serverTimestamp();
+          payload.release_date = part.release_date || '';
+          payload.region = 'International';
+          payload.season = 1;
+          payload.episode = 0;
+          payload.totalEps = 0;
+          payload.runtime = 0;
+          added++;
+        }
+        await setDoc(ref, payload, { merge: true });
+      }
+      props.showToast(added > 0 ? `Added ${added} missing titles` : 'All collection titles already in vault');
+    } finally {
+      setBulkAdding(false);
+    }
   };
 
   return (
@@ -188,16 +228,25 @@ export function FranchisesView(props) {
 
       {/* Folder contents */}
       <Show when={currentFolder()}>
-        <div class="flex justify-between items-center mb-4 px-1">
+        <div class="flex justify-between items-center mb-4 px-1 gap-2">
           <h3 class="font-headline text-2xl text-white">
             Titles <span style="color: var(--p)">({currentMovies().length})</span>
           </h3>
-          <select value={sortMode()} onChange={e => setSortMode(e.target.value)}
-            class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5"
-            style="background: var(--surface); border: 1px solid var(--border-active); color: var(--p)">
-            <option value="order">Sort: Custom</option>
-            <option value="year">Sort: Year</option>
-          </select>
+          <div class="flex items-center gap-2">
+            <Show when={currentFolderData()?.tmdbCollectionId}>
+              <button onClick={addMissingFromCollection} disabled={bulkAdding()}
+                class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 disabled:opacity-50"
+                style="background: var(--p-dim); border: 1px solid var(--p); color: var(--p)">
+                {bulkAdding() ? 'Adding...' : 'Add Missing'}
+              </button>
+            </Show>
+            <select value={sortMode()} onChange={e => setSortMode(e.target.value)}
+              class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5"
+              style="background: var(--surface); border: 1px solid var(--border-active); color: var(--p)">
+              <option value="order">Sort: Custom</option>
+              <option value="year">Sort: Year</option>
+            </select>
+          </div>
         </div>
 
         <Show when={currentMovies().length === 0}>

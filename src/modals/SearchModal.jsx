@@ -1,5 +1,5 @@
 import { createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, cleanPlatform, TMDB_KEY } from '../utils';
 import { PersonModal } from './PersonModal';
@@ -66,6 +66,52 @@ export function SearchModal(props) {
         totalEps: data.number_of_episodes || 0,
         runtime: data.runtime || data.episode_run_time?.[0] || 0
       });
+
+      if (m.media_type === 'movie' && data?.belongs_to_collection?.id) {
+        const franchisesRef = collection(db, 'users', props.uid, 'franchises');
+        const frSnap = await getDocs(franchisesRef);
+        let folder = frSnap.docs.find(d => (d.data().tmdbCollectionId || null) === data.belongs_to_collection.id);
+        if (!folder) {
+          const byName = frSnap.docs.find(d => (d.data().name || '').toLowerCase() === (data.belongs_to_collection.name || '').toLowerCase());
+          folder = byName;
+        }
+        let folderId = folder?.id;
+        if (!folderId) {
+          const created = await addDoc(franchisesRef, { name: data.belongs_to_collection.name, parentId: null, tmdbCollectionId: data.belongs_to_collection.id, createdAt: serverTimestamp() });
+          folderId = created.id;
+        }
+
+        const collRes = await fetch(`https://api.themoviedb.org/3/collection/${data.belongs_to_collection.id}?api_key=${TMDB_KEY}`);
+        const coll = await collRes.json();
+        const ordered = (coll.parts || []).slice().sort((a, b) => (new Date(a.release_date || 0).getTime() || 0) - (new Date(b.release_date || 0).getTime() || 0));
+        const watchSnap = await getDocs(collection(db, 'users', props.uid, 'watchlist'));
+        const existing = new Set(watchSnap.docs.map(d => String(d.id)));
+
+        for (let i = 0; i < ordered.length; i++) {
+          const part = ordered[i];
+          const partRef = doc(db, 'users', props.uid, 'watchlist', String(part.id));
+          const basePayload = {
+            id: part.id,
+            title: part.title || '',
+            poster_path: part.poster_path || null,
+            backdrop_path: part.backdrop_path || null,
+            media_type: 'movie',
+            status: 'Planned',
+            addedAt: serverTimestamp(),
+            release_date: part.release_date || '',
+            region: 'International',
+            season: 1, episode: 0,
+            totalEps: 0,
+            runtime: 0,
+            franchises: { [folderId]: i + 1 }
+          };
+          if (existing.has(String(part.id))) {
+            await setDoc(partRef, { franchises: { [folderId]: i + 1 } }, { merge: true });
+          } else {
+            await setDoc(partRef, basePayload, { merge: true });
+          }
+        }
+      }
       props.showToast("Added to Vault! 🍿");
       props.onClose();
     } catch(err) {
