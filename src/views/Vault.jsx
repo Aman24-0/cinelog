@@ -11,6 +11,16 @@ export function Vault(props) {
 
   createEffect(() => setFilters(f => ({ ...f, status: props.activeStatus || 'all' })));
 
+  createEffect(() => {
+    if (viewMode() !== 'timeline') return;
+    setFilters(f => ({
+      ...f,
+      status: 'Completed',
+      sort: f.sort === 'watch_asc' ? 'watch_asc' : 'watch_desc'
+    }));
+    props.onFilterChange && props.onFilterChange('Completed');
+  });
+
   const handleScroll = () => {
     if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500)
       setDisplayLimit(prev => prev + 30);
@@ -63,14 +73,23 @@ export function Vault(props) {
 
   const activeFilterCount = createMemo(() => Object.values(filters()).filter(v => v !== 'all' && v !== 'recent').length);
 
+  const timelineItems = createMemo(() =>
+    filtered().filter((m) => {
+      if (m.status !== 'Completed') return false;
+      if (!m.watchDate) return false;
+      const watchTime = new Date(m.watchDate).getTime();
+      return !isNaN(watchTime);
+    })
+  );
+
   // Helper memo to group movies by Month and Year for the Timeline View
   const groupedTimeline = createMemo(() => {
-    const list = filtered().slice(0, displayLimit());
+    const list = timelineItems().slice(0, displayLimit());
     const groups = [];
     let currentGroup = null;
 
     list.forEach(m => {
-      const dateObj = m.watchDate ? new Date(m.watchDate) : (m.addedAt ? new Date(m.addedAt.seconds * 1000) : new Date(0));
+      const dateObj = new Date(m.watchDate);
       const monthYear = isNaN(dateObj.getTime()) ? 'Unknown Date' : dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
       if (!currentGroup || currentGroup.label !== monthYear) {
@@ -178,7 +197,7 @@ export function Vault(props) {
       </Show>
 
       {/* RENDER TIMELINE VIEW */}
-      <Show when={viewMode() === 'timeline' && filtered().length > 0}>
+      <Show when={viewMode() === 'timeline' && timelineItems().length > 0}>
         <div class="relative before:absolute before:inset-0 before:ml-[1.25rem] before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-white/10 before:to-transparent space-y-10 animate-fade-in pb-10">
           <For each={groupedTimeline()}>
             {(group) => (
@@ -191,7 +210,7 @@ export function Vault(props) {
                 <div class="space-y-4">
                   <For each={group.items}>
                     {(m) => {
-                      const theDate = m.watchDate ? new Date(m.watchDate) : (m.addedAt ? new Date(m.addedAt.seconds * 1000) : null);
+                      const theDate = new Date(m.watchDate);
                       const day = theDate && !isNaN(theDate) ? theDate.getDate() : '--';
                       
                       return (
@@ -249,6 +268,13 @@ export function Vault(props) {
               </div>
             )}
           </For>
+        </div>
+      </Show>
+
+      <Show when={viewMode() === 'timeline' && filtered().length > 0 && timelineItems().length === 0}>
+        <div class="text-center p-12" style="color: var(--muted)">
+          <Icon name="event_busy" class="text-5xl mb-3" />
+          <p class="font-semibold text-sm">Timeline only shows completed titles with a valid Watch Date.</p>
         </div>
       </Show>
 
