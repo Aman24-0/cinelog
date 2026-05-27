@@ -51,7 +51,6 @@ const getBrandColor = (name) => {
     return `hsl(${Math.abs(hash) % 360}, 70%, 45%)`;
 };
 
-// HELPER: Calculate Days between Start and End Date
 const calculateDays = (start, end) => {
     if (!start || !end) return null;
     const d1 = new Date(start);
@@ -59,14 +58,23 @@ const calculateDays = (start, end) => {
     if (isNaN(d1) || isNaN(d2)) return null;
     if (d2 < d1) return 0;
     const diffTime = Math.abs(d2 - d1);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1; // Inclusive day counting
-    return diffDays;
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 };
 
 export function DetailsModal(props) {
+  // Parsing Logic Updated to Handle 'RESUME_' prefix
   const isPreview = createMemo(() => typeof props.id === 'string' && props.id.startsWith('PREVIEW_'));
+  const isResume = createMemo(() => typeof props.id === 'string' && props.id.startsWith('RESUME_'));
+  
   const previewData = createMemo(() => { if (!isPreview()) return null; try { return JSON.parse(props.id.replace('PREVIEW_', '')); } catch(e) { return null; } });
-  const movie = createMemo(() => isPreview() ? previewData() : props.watchlist.find(m => String(m.id) === String(props.id)));
+  
+  const baseId = createMemo(() => {
+      if (isPreview()) return previewData()?.id;
+      if (isResume()) return props.id.replace('RESUME_', '');
+      return props.id;
+  });
+
+  const movie = createMemo(() => isPreview() ? previewData() : props.watchlist.find(m => String(m.id) === String(baseId())));
   
   const [details, setDetails] = createSignal({});
   const [isEdit, setIsEdit] = createSignal(false); 
@@ -82,40 +90,28 @@ export function DetailsModal(props) {
   const [customServers, setCustomServers] = createSignal({});
   const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
 
-  // DYNAMIC SERVER BUILDER
+  // NEW: Tracking Progress local state
+  let currentProgress = null;
+  let autoPlayTriggered = false;
+
   const availableServers = createMemo(() => {
     const custom = customServers();
     const merged = [];
-    
-    // Process Default Providers
     DEFAULT_SERVERS.forEach(s => {
       const overrides = custom[s.id];
       if (!overrides || overrides.enabled !== false) {
-        merged.push({
-          ...s,
-          name: overrides?.name || s.name,
-          movieUrl: overrides?.movieUrl || s.movieUrl,
-          tvUrl: overrides?.tvUrl || s.tvUrl
-        });
+        merged.push({ ...s, name: overrides?.name || s.name, movieUrl: overrides?.movieUrl || s.movieUrl, tvUrl: overrides?.tvUrl || s.tvUrl });
       }
     });
-
-    // Process Custom-Added Providers
     Object.keys(custom).forEach(key => {
       if (!DEFAULT_SERVERS.find(s => s.id === key) && custom[key].enabled !== false) {
-        merged.push({
-          id: key,
-          name: custom[key].name || 'Custom Server',
-          movieUrl: custom[key].movieUrl || '',
-          tvUrl: custom[key].tvUrl || '',
-          icon: 'add_link'
-        });
+        merged.push({ id: key, name: custom[key].name || 'Custom Server', movieUrl: custom[key].movieUrl || '', tvUrl: custom[key].tvUrl || '', icon: 'add_link' });
       }
     });
-
     return merged;
   });
 
+  // Default server initializer
   createEffect(() => {
     const serversList = availableServers();
     if (serversList.length > 0 && !serversList.find(s => s.id === activeServer())) {
@@ -123,7 +119,16 @@ export function DetailsModal(props) {
     }
   });
   
+  // NEW: Robust Player Message Handler for Tracking
   const handlePlayerMessages = (event) => {
+    if (event.data?.type === 'MEDIA_DATA' && event.data?.data) {
+        const { currentTime, duration } = event.data.data;
+        if (currentTime > 0 && duration > 0) {
+            currentProgress = { currentTime, duration };
+        }
+    }
+    
+    // Existing local storage fallback
     if (event.origin === 'https://player.vidzee.wtf') {
       if (event.data?.type === 'MEDIA_DATA') localStorage.setItem('vidZeeProgress', JSON.stringify(event.data.data));
     }
@@ -132,20 +137,64 @@ export function DetailsModal(props) {
     }
   };
 
+  // NEW: Function to save progress gracefully to Firebase
+  const saveProgressToDb = async () => {
+      if (currentProgress && !props.isGuest && movie() && !isPreview()) {
+          try {
+              await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), {
+                  watchProgress: {
+                      currentTime: currentProgress.currentTime,
+                      duration: currentProgress.duration,
+                      server: activeServer(),
+                      updatedAt: new Date().toISOString()
+                  }
+              });
+          } catch (e) { console.error("Error saving progress", e); }
+          currentProgress = null; // Prevent double saving
+      }
+  };
+
+  // NEW: Save on Player Close
+  createEffect((prev) => {
+      const isPlaying = showPlayer();
+      if (prev === true && !isPlaying) {
+          saveProgressToDb();
+      }
+      return isPlaying;
+  }, false);
+
+  // NEW: Auto-Resume Effect (triggered when card clicked from Dashboard)
+  createEffect(() => {
+      if (isResume() && movie() && !autoPlayTriggered) {
+          const serversList = availableServers();
+          if (serversList.length > 0) {
+              autoPlayTriggered = true;
+              const savedServer = movie().watchProgress?.server;
+              if (savedServer && serversList.find(s => s.id === savedServer)) {
+                  setActiveServer(savedServer);
+              }
+              setShowPlayer(true);
+          }
+      }
+  });
+
   onMount(async () => {
     if (!props.isGuest) {
       try {
         const userDoc = await getDoc(doc(db, 'users', props.uid || 'unknown'));
         const customSettings = userDoc.data()?.customServers || {};
         setCustomServers(customSettings);
-      } catch (e) {
-        console.error('Failed to load custom servers:', e);
-      }
+      } catch (e) { console.error('Failed to load custom servers:', e); }
     }
   });
 
   onMount(() => { document.body.style.overflow = 'hidden'; window.addEventListener('message', handlePlayerMessages); }); 
-  onCleanup(() => { document.body.style.overflow = ''; window.removeEventListener('message', handlePlayerMessages); });
+  
+  onCleanup(() => { 
+      saveProgressToDb(); // Save on unmount
+      document.body.style.overflow = ''; 
+      window.removeEventListener('message', handlePlayerMessages); 
+  });
   
   const allAvailablePlatforms = createMemo(() => [...new Set(props.watchlist.flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort());
 
@@ -317,7 +366,6 @@ export function DetailsModal(props) {
     const e = movie().episode || 1; 
     const type = movie().media_type === 'tv' ? 'tv' : 'movie';
     
-    // Now searches the dynamically merged list
     const serverConfig = availableServers().find(srv => srv.id === serverId);
     if (!serverConfig) return '';
     
@@ -605,7 +653,6 @@ export function DetailsModal(props) {
                 <div class="relative bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 flex items-center gap-1 hover:bg-white/10 transition-colors">
                     <Icon name="router" class="text-gray-400 text-[14px]" />
                     <select value={activeServer()} onChange={(e) => { e.stopPropagation(); setActiveServer(e.target.value); }} class="bg-transparent text-[10px] font-black uppercase tracking-widest text-[var(--primary)] outline-none appearance-none cursor-pointer pr-4 pl-1">
-                        {/* Dropdown also uses dynamically merged server list */}
                         <For each={availableServers()}>{(srv) => <option value={srv.id} class="bg-[#0c0e14] text-white">{srv.name}</option>}</For>
                     </select>
                     <Icon name="expand_more" class="text-gray-400 text-[14px] absolute right-1 pointer-events-none" />
@@ -628,12 +675,11 @@ export function DetailsModal(props) {
           showToast={props.showToast}
           onClose={() => setPersonId(null)}
           openPreview={(item) => {
-            // When a movie is clicked inside the Person Profile, close it and prompt a search
             setPersonId(null);
             if (props.openPreview) {
               props.openPreview(item, 'fromPerson');
             } else {
-              props.onClose(); // Closes the current movie DetailsModal
+              props.onClose();
               props.showToast(`Search for ${item.title || item.name} to view details!`);
             }
           }}
