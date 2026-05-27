@@ -62,7 +62,6 @@ const calculateDays = (start, end) => {
 };
 
 export function DetailsModal(props) {
-  // Parsing Logic Updated to Handle 'RESUME_' prefix
   const isPreview = createMemo(() => typeof props.id === 'string' && props.id.startsWith('PREVIEW_'));
   const isResume = createMemo(() => typeof props.id === 'string' && props.id.startsWith('RESUME_'));
   
@@ -74,7 +73,7 @@ export function DetailsModal(props) {
       return props.id;
   });
 
-  const movie = createMemo(() => isPreview() ? previewData() : props.watchlist.find(m => String(m.id) === String(baseId())));
+  const movie = createMemo(() => isPreview() ? previewData() : props.watchlist?.find(m => String(m.id) === String(baseId())));
   
   const [details, setDetails] = createSignal({});
   const [isEdit, setIsEdit] = createSignal(false); 
@@ -88,11 +87,12 @@ export function DetailsModal(props) {
   
   const [richPlatforms, setRichPlatforms] = createSignal([]);
   const [customServers, setCustomServers] = createSignal({});
-  const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
-
-  // NEW: Tracking Progress local state
-  let currentProgress = null;
+  
+  // NEW: Robust State for tracking progress live
+  const [watchProgress, setWatchProgress] = createSignal(null);
   let autoPlayTriggered = false;
+
+  const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
 
   const availableServers = createMemo(() => {
     const custom = customServers();
@@ -111,7 +111,6 @@ export function DetailsModal(props) {
     return merged;
   });
 
-  // Default server initializer
   createEffect(() => {
     const serversList = availableServers();
     if (serversList.length > 0 && !serversList.find(s => s.id === activeServer())) {
@@ -119,51 +118,65 @@ export function DetailsModal(props) {
     }
   });
   
-  // NEW: Robust Player Message Handler for Tracking
+  // NEW: Super-Aggressive Player Message Handler
   const handlePlayerMessages = (event) => {
-    if (event.data?.type === 'MEDIA_DATA' && event.data?.data) {
-        const { currentTime, duration } = event.data.data;
-        if (currentTime > 0 && duration > 0) {
-            currentProgress = { currentTime, duration };
+    try {
+        if (event.data?.source?.includes('react-devtools')) return; // Ignore extension noise
+        
+        let msg = event.data;
+        if (typeof msg === 'string') msg = JSON.parse(msg);
+
+        // Vidzee / Peachify Format
+        if (msg?.type === 'MEDIA_DATA' && msg?.data) {
+            const cTime = msg.data.currentTime || msg.data.time || 0;
+            const dur = msg.data.duration || 100;
+            if (cTime > 2) setWatchProgress({ currentTime: cTime, duration: dur }); // > 2 seconds buffer
         }
-    }
-    
-    // Existing local storage fallback
-    if (event.origin === 'https://player.vidzee.wtf') {
-      if (event.data?.type === 'MEDIA_DATA') localStorage.setItem('vidZeeProgress', JSON.stringify(event.data.data));
-    }
-    if (event.origin === 'https://peachify.top') {
-      if (event.data?.type === 'MEDIA_DATA') localStorage.setItem('peachifyProgress', JSON.stringify(event.data.data));
+        // Vidsrc / Autoembed Generic Format
+        else if (msg?.event === 'timeupdate' && msg?.currentTime) {
+            if (msg.currentTime > 2) setWatchProgress({ currentTime: msg.currentTime, duration: msg.duration || 100 });
+        }
+        // JWPlayer Generic Format
+        else if (msg?.currentTime !== undefined && typeof msg.currentTime === 'number') {
+            if (msg.currentTime > 2) setWatchProgress({ currentTime: msg.currentTime, duration: msg.duration || 100 });
+        }
+    } catch (e) {
+        // Silently ignore parse errors from irrelevant iframes
     }
   };
 
-  // NEW: Function to save progress gracefully to Firebase
+  // NEW: Force Save Function
   const saveProgressToDb = async () => {
-      if (currentProgress && !props.isGuest && movie() && !isPreview()) {
+      const prog = watchProgress();
+      if (prog && prog.currentTime > 2 && !props.isGuest && movie() && !isPreview()) {
           try {
-              await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), {
+              const updates = {
                   watchProgress: {
-                      currentTime: currentProgress.currentTime,
-                      duration: currentProgress.duration,
+                      currentTime: prog.currentTime,
+                      duration: prog.duration || 100,
                       server: activeServer(),
                       updatedAt: new Date().toISOString()
                   }
-              });
-          } catch (e) { console.error("Error saving progress", e); }
-          currentProgress = null; // Prevent double saving
+              };
+              
+              // Auto-change status to 'Watching' if it was 'Planned'
+              if (movie().status === 'Planned' || movie().status === 'Plan to Watch') {
+                  updates.status = 'Watching';
+              }
+              
+              await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), updates);
+              
+              // Visual feedback so user KNOWS it saved
+              if(props.showToast) props.showToast("Progress Saved! 🍿");
+              
+              setWatchProgress(null); // Reset after saving
+          } catch (e) { 
+              console.error("Error saving progress", e); 
+          }
       }
   };
 
-  // NEW: Save on Player Close
-  createEffect((prev) => {
-      const isPlaying = showPlayer();
-      if (prev === true && !isPlaying) {
-          saveProgressToDb();
-      }
-      return isPlaying;
-  }, false);
-
-  // NEW: Auto-Resume Effect (triggered when card clicked from Dashboard)
+  // Auto-Resume Effect (triggered when card clicked from Dashboard)
   createEffect(() => {
       if (isResume() && movie() && !autoPlayTriggered) {
           const serversList = availableServers();
@@ -173,7 +186,8 @@ export function DetailsModal(props) {
               if (savedServer && serversList.find(s => s.id === savedServer)) {
                   setActiveServer(savedServer);
               }
-              setShowPlayer(true);
+              // Add slight delay to ensure UI mounts properly before opening player
+              setTimeout(() => setShowPlayer(true), 200);
           }
       }
   });
@@ -191,12 +205,12 @@ export function DetailsModal(props) {
   onMount(() => { document.body.style.overflow = 'hidden'; window.addEventListener('message', handlePlayerMessages); }); 
   
   onCleanup(() => { 
-      saveProgressToDb(); // Save on unmount
+      saveProgressToDb(); // Backup save on unmount
       document.body.style.overflow = ''; 
       window.removeEventListener('message', handlePlayerMessages); 
   });
   
-  const allAvailablePlatforms = createMemo(() => [...new Set(props.watchlist.flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort());
+  const allAvailablePlatforms = createMemo(() => [...new Set((props.watchlist || []).flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort());
 
   createEffect(() => { 
       if(movie()) { 
@@ -343,7 +357,7 @@ export function DetailsModal(props) {
       return;
     }
     const item = movie();
-    if (props.watchlist.some(w => String(w.id) === String(item.id))) return props.showToast("Already in Vault! 🍿");
+    if ((props.watchlist || []).some(w => String(w.id) === String(item.id))) return props.showToast("Already in Vault! 🍿");
     props.showToast("Adding to Vault...");
     try {
       const castNames = details().credits?.cast?.slice(0, 5).map(c => c.name) || [];
@@ -369,12 +383,21 @@ export function DetailsModal(props) {
     const serverConfig = availableServers().find(srv => srv.id === serverId);
     if (!serverConfig) return '';
     
-    const urlTemplate = type === 'tv' ? serverConfig.tvUrl : serverConfig.movieUrl;
+    let urlTemplate = type === 'tv' ? serverConfig.tvUrl : serverConfig.movieUrl;
+    if(!urlTemplate) return '';
     
-    return (urlTemplate || '')
+    // Check if we have a saved resume time for this specific server
+    let timeParam = '';
+    if (movie().watchProgress && movie().watchProgress.server === serverId && movie().watchProgress.currentTime > 0) {
+        const t = Math.floor(movie().watchProgress.currentTime);
+        // Different servers handle time params differently, usually ?t= or &t=
+        timeParam = urlTemplate.includes('?') ? `&t=${t}` : `?t=${t}`; 
+    }
+    
+    return urlTemplate
       .replace(/\{id\}|\[TMDB_ID\]/gi, id)
       .replace(/\{season\}|\[SEASON\]/gi, s)
-      .replace(/\{episode\}|\[EPISODE\]/gi, e);
+      .replace(/\{episode\}|\[EPISODE\]/gi, e) + timeParam;
   };
 
   return (
@@ -449,10 +472,13 @@ export function DetailsModal(props) {
                                 </button>
                             )}</For>
                         </div>
+                        
+                        {/* Modified Watch Now button to show Resume state if progress exists */}
                         <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPlayer(true); }}
                           class="w-full mt-3 font-black py-4 rounded-xl uppercase text-[11px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
                           style="background: var(--p); color: #05060a; box-shadow: 0 0 24px var(--p-glow)">
-                            <Icon name="play_circle" fill class="text-[18px]"/> Watch Now
+                            <Icon name="play_circle" fill class="text-[18px]"/> 
+                            {movie().watchProgress && movie().watchProgress.currentTime > 0 ? 'Resume Movie' : 'Watch Now'}
                         </button>
                     </div>
                     </Show>
@@ -503,7 +529,6 @@ export function DetailsModal(props) {
                     <div class="glass-surface p-5 rounded-2xl space-y-4 border border-white/5">
                         <Show when={!isPreview()}><SafeInfoRow icon="adjust" label="Status" value={<span class="text-[var(--primary)] font-black uppercase text-[10px] tracking-widest">{movie().status||'Planned'}</span>} /></Show>
                         
-                        {/* Global Watch Date (Hidden for TV Shows that have Season Timelines setup) */}
                         <Show when={!isPreview() && (movie().media_type !== 'tv' || !movie().seasonDates || Object.keys(movie().seasonDates).length === 0)}>
                             <SafeInfoRow icon="calendar_today" label="Watch Date" value={<span class="text-xs text-gray-300">{movie().watchDate || 'Not set'}</span>} />
                         </Show>
@@ -534,7 +559,6 @@ export function DetailsModal(props) {
                         <Show when={!isPreview() && movieFranchises()}><SafeInfoRow icon="folder_special" label="Lists" value={<span class="text-xs font-bold text-white">{movieFranchises()}</span>} /></Show>
                         <Show when={!isPreview() && movie().notes && typeof movie().notes === 'string'}><div class="border-t border-white/5 pt-3 mt-3"><p class="text-[10px] uppercase font-black text-gray-500 tracking-widest mb-1 flex items-center gap-1"><Icon name="edit_note" class="text-[14px]"/> Notes</p><p class="text-sm text-gray-300 italic">"{movie().notes}"</p></div></Show>
 
-                        {/* Season Timeline Display */}
                         <Show when={!isPreview() && movie().media_type === 'tv' && movie().seasonDates && Object.keys(movie().seasonDates).some(k => movie().seasonDates[k].start || movie().seasonDates[k].end)}>
                             <div class="border-t border-white/5 pt-4 mt-2">
                                 <p class="text-[10px] uppercase font-black text-[var(--primary)] tracking-widest mb-2 flex items-center gap-1.5"><Icon name="history" class="text-[14px]"/> Season Timeline</p>
@@ -645,7 +669,12 @@ export function DetailsModal(props) {
         <div class="fixed inset-0 bg-black z-[10000000] flex flex-col animate-fade-in" onClick={(e)=>e.stopPropagation()}>
           <div class="p-4 flex justify-between items-center bg-[#0c0e14] border-b border-white/5 shadow-xl">
             <div class="flex items-center gap-3 overflow-hidden pr-2 flex-1">
-                <button type="button" onClick={(e) => { e.stopPropagation(); setShowPlayer(false); }} class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all shrink-0"><Icon name="arrow_back" class="text-sm" /></button>
+                {/* MODIFIED BACK BUTTON TO FORCE SAVE */}
+                <button type="button" onClick={(e) => { 
+                    e.stopPropagation(); 
+                    saveProgressToDb();
+                    setShowPlayer(false); 
+                }} class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all shrink-0"><Icon name="arrow_back" class="text-sm" /></button>
                 <h3 class="font-bold text-sm text-white truncate max-w-[150px]">{movie().title || movie().name}</h3>
             </div>
             
