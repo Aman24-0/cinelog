@@ -89,9 +89,17 @@ export function DetailsModal(props) {
   const [customServers, setCustomServers] = createSignal({});
   
   const [watchProgress, setWatchProgress] = createSignal(null);
+  const [contentDuration, setContentDuration] = createSignal(0);
   let autoPlayTriggered = false;
 
   const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
+
+  const inferDurationSeconds = () => {
+    const d = details();
+    const mins = d?.runtime || d?.episode_run_time?.[0] || movie()?.runtime || 0;
+    const sec = Number(mins) * 60;
+    return Number.isFinite(sec) && sec > 0 ? sec : 0;
+  };
 
   const availableServers = createMemo(() => {
     const custom = customServers();
@@ -126,14 +134,25 @@ export function DetailsModal(props) {
 
         if (msg?.type === 'MEDIA_DATA' && msg?.data) {
             const cTime = msg.data.currentTime || msg.data.time || 0;
-            const dur = msg.data.duration || 100;
-            if (cTime > 0) setWatchProgress({ currentTime: cTime, duration: dur }); 
+            const dur = msg.data.duration || contentDuration() || inferDurationSeconds() || 0;
+            if (cTime > 0) {
+              if (dur > 0) setContentDuration(dur);
+              setWatchProgress({ currentTime: cTime, duration: dur }); 
+            }
         }
         else if (msg?.event === 'timeupdate' && msg?.currentTime) {
-            if (msg.currentTime > 0) setWatchProgress({ currentTime: msg.currentTime, duration: msg.duration || 100 });
+            const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
+            if (msg.currentTime > 0) {
+              if (dur > 0) setContentDuration(dur);
+              setWatchProgress({ currentTime: msg.currentTime, duration: dur });
+            }
         }
         else if (msg?.currentTime !== undefined && typeof msg.currentTime === 'number') {
-            if (msg.currentTime > 0) setWatchProgress({ currentTime: msg.currentTime, duration: msg.duration || 100 });
+            const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
+            if (msg.currentTime > 0) {
+              if (dur > 0) setContentDuration(dur);
+              setWatchProgress({ currentTime: msg.currentTime, duration: dur });
+            }
         }
     } catch (e) {}
   };
@@ -146,7 +165,7 @@ export function DetailsModal(props) {
               const updates = {
                   watchProgress: {
                       currentTime: prog.currentTime,
-                      duration: prog.duration || 100,
+                      duration: prog.duration || contentDuration() || inferDurationSeconds() || 0,
                       server: activeServer(),
                       updatedAt: new Date().toISOString()
                   }
@@ -178,9 +197,12 @@ export function DetailsModal(props) {
               setTimeout(() => {
                   // Failsafe injection
                   if (movie().watchProgress) {
+                      if (movie().watchProgress.duration) setContentDuration(movie().watchProgress.duration);
                       setWatchProgress(movie().watchProgress);
                   } else {
-                      setWatchProgress({ currentTime: 5, duration: 100 });
+                      const inferred = inferDurationSeconds();
+                      if (inferred > 0) setContentDuration(inferred);
+                      setWatchProgress({ currentTime: 0, duration: inferred });
                   }
                   setShowPlayer(true);
               }, 200);
@@ -228,6 +250,8 @@ export function DetailsModal(props) {
           
           fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}?api_key=${TMDB_KEY}&append_to_response=videos,credits`).then(r=>r.json()).then(d=>{ 
               setDetails(d);
+              const inferred = (d?.runtime || d?.episode_run_time?.[0] || 0) * 60;
+              if (inferred > 0) setContentDuration(inferred);
               const v = d?.videos?.results; if(v){ let t = v.find(x=>x.site==='YouTube'&&x.type==='Trailer')||v.find(x=>x.site==='YouTube'&&x.type==='Teaser')||v.find(x=>x.site==='YouTube'); if(t) setTrailerKey(t.key); }
               if (!isPreview() && !props.isGuest && d.genres && d.genres.length > 0) {
                   const apiGenres = d.genres.map(g => g.name).join(', ');
@@ -474,8 +498,11 @@ export function DetailsModal(props) {
                             
                             // Guarantee progress injection so it NEVER fails
                             if (!movie().watchProgress || movie().watchProgress.currentTime === 0) {
-                                setWatchProgress({ currentTime: 5, duration: 100 }); 
+                                const inferred = inferDurationSeconds();
+                                if (inferred > 0) setContentDuration(inferred);
+                                setWatchProgress({ currentTime: 0, duration: inferred }); 
                             } else {
+                                if (movie().watchProgress.duration) setContentDuration(movie().watchProgress.duration);
                                 setWatchProgress(movie().watchProgress);
                             }
                             
