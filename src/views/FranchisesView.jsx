@@ -3,6 +3,72 @@ import { doc, updateDoc, deleteDoc, writeBatch, collection, addDoc, serverTimest
 import { db } from '../firebase';
 import { Icon, TMDB_KEY } from '../utils';
 
+function AddToFolderModal(props) {
+  const [search, setSearch] = createSignal('');
+  const [mode, setMode] = createSignal('vault');
+  onMount(() => document.body.style.overflow = 'hidden');
+  onCleanup(() => document.body.style.overflow = '');
+
+  const detectRelated = (m) => {
+    const blob = `${m.title || m.name || ''} ${(m.genresList || []).join(' ')} ${(m.castList || []).join(' ')}`.toLowerCase();
+    const folderName = (props.folderName || '').toLowerCase();
+    if (folderName.includes('marvel')) return /(marvel|avengers|iron man|thor|captain america|guardians|doctor strange|black panther|ant-man|spider-man|x-men|deadpool)/.test(blob);
+    if (folderName.includes('dc')) return /(dc|batman|superman|wonder woman|justice league|aquaman|flash)/.test(blob);
+    if (!folderName) return false;
+    return blob.includes(folderName.split(' ')[0]);
+  };
+
+  const pool = createMemo(() => props.watchlist().filter(m => m.franchises?.[props.folderId] === undefined));
+  const shown = createMemo(() => {
+    const q = search().toLowerCase();
+    let list = mode() === 'related' ? pool().filter(detectRelated) : pool();
+    if (q) list = list.filter(m => (m.title || m.name || '').toLowerCase().includes(q));
+    return list;
+  });
+
+  const addToFolder = async (m) => {
+    const nextOrder = props.currentMovies().length + 1;
+    await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(m.id)), { [`franchises.${props.folderId}`]: nextOrder });
+    props.showToast('Added to folder');
+  };
+
+  return (
+    <div class="fixed inset-0 z-[999999] flex items-center justify-center p-4" style="background:rgba(0,0,0,.75)" onClick={props.onClose}>
+      <div class="w-full max-w-2xl rounded-2xl overflow-hidden" style="background:var(--surface);border:1px solid var(--border-active)" onClick={(e)=>e.stopPropagation()}>
+        <div class="p-4 flex items-center justify-between">
+          <h3 class="text-white font-bold flex items-center gap-2"><Icon name="playlist_add"/> Add to Folder</h3>
+          <button onClick={props.onClose} class="p-2 rounded-full hover:bg-white/10"><Icon name="close"/></button>
+        </div>
+        <div class="px-4 pb-3 flex items-center gap-2">
+          <button onClick={()=>setMode('vault')} class="px-3 py-1.5 rounded-full text-xs font-bold" style={mode()==='vault'?'background:var(--p);color:#000':'background:var(--raised);color:var(--text)'}>From Vault</button>
+          <button onClick={()=>setMode('related')} class="px-3 py-1.5 rounded-full text-xs font-bold" style={mode()==='related'?'background:var(--p);color:#000':'background:var(--raised);color:var(--text)'}>Auto Related</button>
+          <input value={search()} onInput={(e)=>setSearch(e.target.value)} placeholder="Search title..." class="ml-auto w-64 rounded-xl px-3 py-2 bg-black/30 border border-white/10 text-white text-sm"/>
+        </div>
+        <div class="max-h-[60vh] overflow-y-auto p-3 space-y-2">
+          <Show when={shown().length === 0}>
+            <div class="text-center py-12 text-gray-400">
+              <Icon name="inbox" class="text-4xl mb-2" />
+              <p class="text-sm font-bold">No matching titles</p>
+            </div>
+          </Show>
+          <For each={shown()}>
+            {(m) => (
+              <div class="flex items-center gap-3 rounded-xl p-3" style="background:var(--raised)">
+                <img src={m.poster_path ? `https://image.tmdb.org/t/p/w92${m.poster_path}` : ''} class="w-10 h-14 rounded-lg object-cover bg-black/40" />
+                <div class="flex-1 min-w-0">
+                  <p class="text-white font-bold truncate">{m.title || m.name}</p>
+                  <p class="text-[10px] text-gray-400">{(m.release_date || m.first_air_date || '').split('-')[0]} · {m.media_type === 'tv' ? 'Series' : 'Movie'}</p>
+                </div>
+                <button onClick={()=>addToFolder(m)} class="px-3 py-1.5 rounded-lg text-xs font-bold" style="background:var(--p);color:#000">Add</button>
+              </div>
+            )}
+          </For>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function FolderEditModal(props) {
   const [name, setName] = createSignal(props.folder?.name || '');
   const [cover, setCover] = createSignal(props.folder?.coverImage || '');
@@ -248,6 +314,15 @@ export function FranchisesView(props) {
       </Show>
 
       <Show when={showAddModal() && currentFolder()}>
+        <AddToFolderModal
+          uid={props.uid}
+          folderId={currentFolder()}
+          folderName={currentFolderData()?.name}
+          watchlist={props.watchlist}
+          currentMovies={currentMovies}
+          showToast={props.showToast}
+          onClose={() => setShowAddModal(false)}
+        />
       </Show>
 
       <Show when={editingFolder()}>
