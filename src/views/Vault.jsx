@@ -4,16 +4,27 @@ import { MovieCard } from '../components/MovieCard';
 
 export function Vault(props) {
   const [search, setSearch] = createSignal('');
-  const [filters, setFilters] = createSignal({ type: 'all', status: props.activeStatus || 'all', region: 'all', genre: 'all', platform: 'all', sort: 'recent', tag: 'all' });
+  const defaultFilters = { type: 'all', status: props.activeStatus || 'all', region: 'all', genre: 'all', platform: 'all', sort: 'recent', tag: 'all', imdbMin: '', imdbMax: '', rtMin: '', rtMax: '', yearMin: '', yearMax: '', runtimeMin: '', runtimeMax: '' };
+  const [filters, setFilters] = createSignal(defaultFilters);
   const [showFilter, setShowFilter] = createSignal(false);
-  const [displayLimit, setDisplayLimit] = createSignal(30);
+  const [displayLimit, setDisplayLimit] = createSignal(20);
   const [viewMode, setViewMode] = createSignal('grid'); // 'grid' or 'timeline'
 
   createEffect(() => setFilters(f => ({ ...f, status: props.activeStatus || 'all' })));
 
+  createEffect(() => {
+    if (viewMode() !== 'timeline') return;
+    setFilters(f => ({
+      ...f,
+      status: 'Completed',
+      sort: f.sort === 'watch_asc' ? 'watch_asc' : 'watch_desc'
+    }));
+    props.onFilterChange && props.onFilterChange('Completed');
+  });
+
   const handleScroll = () => {
     if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500)
-      setDisplayLimit(prev => prev + 30);
+      setDisplayLimit(prev => prev + 20);
   };
   onMount(() => window.addEventListener('scroll', handleScroll));
   onCleanup(() => window.removeEventListener('scroll', handleScroll));
@@ -37,18 +48,34 @@ export function Vault(props) {
     if (filters().genre !== 'all') f = f.filter(m => getSafeGenres(m).includes(filters().genre));
     if (filters().platform !== 'all') f = f.filter(m => getSafePlatforms(m).includes(filters().platform));
     if (filters().tag !== 'all') f = f.filter(m => m.tag === filters().tag);
+
+    const inRange = (value, min, max) => {
+      const n = Number(value);
+      if (min !== '' && (isNaN(n) || n < Number(min))) return false;
+      if (max !== '' && (isNaN(n) || n > Number(max))) return false;
+      return true;
+    };
+    f = f.filter(m => {
+      const year = parseInt(String(m.release_date || m.first_air_date || '').substring(0, 4)) || NaN;
+      const rt = Number(String(m.rtRating || '').replace('%', '')) || NaN;
+      return inRange(m.imdbRating, filters().imdbMin, filters().imdbMax)
+        && inRange(rt, filters().rtMin, filters().rtMax)
+        && inRange(year, filters().yearMin, filters().yearMax)
+        && inRange(m.runtime, filters().runtimeMin, filters().runtimeMax);
+    });
     
     return f.sort((a, b) => {
-      // NEW: Watch Date Sorting
-      if (filters().sort === 'watch_desc') {
-          const dA = a.watchDate ? new Date(a.watchDate).getTime() : (a.addedAt?.seconds * 1000 || 0);
-          const dB = b.watchDate ? new Date(b.watchDate).getTime() : (b.addedAt?.seconds * 1000 || 0);
-          return dB - dA; // Newest first
-      }
-      if (filters().sort === 'watch_asc') {
-          const dA = a.watchDate ? new Date(a.watchDate).getTime() : (a.addedAt?.seconds * 1000 || 0);
-          const dB = b.watchDate ? new Date(b.watchDate).getTime() : (b.addedAt?.seconds * 1000 || 0);
-          return dA - dB; // Oldest first
+      // Watch Date Sorting: do not fall back to vault-added date.
+      // Items without a valid watchDate are always pushed below dated titles.
+      if (filters().sort === 'watch_desc' || filters().sort === 'watch_asc') {
+          const dA = a.watchDate ? new Date(a.watchDate).getTime() : NaN;
+          const dB = b.watchDate ? new Date(b.watchDate).getTime() : NaN;
+          const hasA = !isNaN(dA);
+          const hasB = !isNaN(dB);
+          if (hasA && !hasB) return -1;
+          if (!hasA && hasB) return 1;
+          if (!hasA && !hasB) return 0;
+          return filters().sort === 'watch_desc' ? dB - dA : dA - dB;
       }
       
       // Existing Sorting
@@ -61,16 +88,30 @@ export function Vault(props) {
     });
   });
 
-  const activeFilterCount = createMemo(() => Object.values(filters()).filter(v => v !== 'all' && v !== 'recent').length);
+    const activeFilterCount = createMemo(() =>
+    Object.entries(filters()).filter(([key, value]) => {
+      if (key === 'sort') return value !== 'recent';
+      return value !== 'all' && value !== '';
+    }).length
+  );
+
+  const timelineItems = createMemo(() =>
+    filtered().filter((m) => {
+      if (m.status !== 'Completed') return false;
+      if (!m.watchDate) return false;
+      const watchTime = new Date(m.watchDate).getTime();
+      return !isNaN(watchTime);
+    })
+  );
 
   // Helper memo to group movies by Month and Year for the Timeline View
   const groupedTimeline = createMemo(() => {
-    const list = filtered().slice(0, displayLimit());
+    const list = timelineItems().slice(0, displayLimit());
     const groups = [];
     let currentGroup = null;
 
     list.forEach(m => {
-      const dateObj = m.watchDate ? new Date(m.watchDate) : (m.addedAt ? new Date(m.addedAt.seconds * 1000) : new Date(0));
+      const dateObj = new Date(m.watchDate);
       const monthYear = isNaN(dateObj.getTime()) ? 'Unknown Date' : dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
       if (!currentGroup || currentGroup.label !== monthYear) {
@@ -178,7 +219,7 @@ export function Vault(props) {
       </Show>
 
       {/* RENDER TIMELINE VIEW */}
-      <Show when={viewMode() === 'timeline' && filtered().length > 0}>
+      <Show when={viewMode() === 'timeline' && timelineItems().length > 0}>
         <div class="relative before:absolute before:inset-0 before:ml-[1.25rem] before:-translate-x-px before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-white/10 before:to-transparent space-y-10 animate-fade-in pb-10">
           <For each={groupedTimeline()}>
             {(group) => (
@@ -191,7 +232,7 @@ export function Vault(props) {
                 <div class="space-y-4">
                   <For each={group.items}>
                     {(m) => {
-                      const theDate = m.watchDate ? new Date(m.watchDate) : (m.addedAt ? new Date(m.addedAt.seconds * 1000) : null);
+                      const theDate = new Date(m.watchDate);
                       const day = theDate && !isNaN(theDate) ? theDate.getDate() : '--';
                       
                       return (
@@ -252,16 +293,31 @@ export function Vault(props) {
         </div>
       </Show>
 
+      <Show when={viewMode() === 'timeline' && filtered().length > 0 && timelineItems().length === 0}>
+        <div class="text-center p-12" style="color: var(--muted)">
+          <Icon name="event_busy" class="text-5xl mb-3" />
+          <p class="font-semibold text-sm">Timeline only shows completed titles with a valid Watch Date.</p>
+        </div>
+      </Show>
+
+
+      <Show when={viewMode() === 'grid' && filtered().length > displayLimit()}>
+        <div class="flex items-center justify-center gap-2 py-8 text-[10px] font-black uppercase tracking-widest" style="color: var(--p)">
+          <Icon name="progress_activity" class="animate-spin text-sm" /> Loading more titles...
+        </div>
+      </Show>
+
       {/* FILTER MODAL */}
       <Show when={showFilter()}>
         <FilterModal
           filters={filters()}
-          setFilters={(v) => { setFilters(v); setDisplayLimit(30); }}
+          setFilters={(v) => { setFilters(v); setDisplayLimit(20); }}
           uniqueGenres={uniqueGenres()}
           uniquePlatforms={uniquePlatforms()}
           uniqueTags={uniqueTags()}
           onClose={() => setShowFilter(false)}
           onFilterChange={props.onFilterChange}
+          onClear={() => { setFilters({ ...defaultFilters, status: 'all' }); props.onFilterChange && props.onFilterChange('all'); setDisplayLimit(20); }}
         />
       </Show>
     </div>
@@ -310,6 +366,23 @@ function FilterModal(props) {
           <FilterSel label="Genre" val={props.filters.genre}
             set={(v) => props.setFilters({ ...props.filters, genre: v })}
             opts={[{ l: 'All Genres', v: 'all' }, ...props.uniqueGenres.map(g => ({ l: g, v: g }))]} />
+
+          <RangeFilter label="IMDb" min={props.filters.imdbMin} max={props.filters.imdbMax}
+            setMin={(v) => props.setFilters({ ...props.filters, imdbMin: v })}
+            setMax={(v) => props.setFilters({ ...props.filters, imdbMax: v })}
+            minPlaceholder="0" maxPlaceholder="10" />
+          <RangeFilter label="RT %" min={props.filters.rtMin} max={props.filters.rtMax}
+            setMin={(v) => props.setFilters({ ...props.filters, rtMin: v })}
+            setMax={(v) => props.setFilters({ ...props.filters, rtMax: v })}
+            minPlaceholder="0" maxPlaceholder="100" />
+          <RangeFilter label="Year" min={props.filters.yearMin} max={props.filters.yearMax}
+            setMin={(v) => props.setFilters({ ...props.filters, yearMin: v })}
+            setMax={(v) => props.setFilters({ ...props.filters, yearMax: v })}
+            minPlaceholder="1990" maxPlaceholder="2026" />
+          <RangeFilter label="Runtime" min={props.filters.runtimeMin} max={props.filters.runtimeMax}
+            setMin={(v) => props.setFilters({ ...props.filters, runtimeMin: v })}
+            setMax={(v) => props.setFilters({ ...props.filters, runtimeMax: v })}
+            minPlaceholder="Min" maxPlaceholder="Max" />
           
           {/* NEW SORT OPTIONS ADDED HERE */}
           <FilterSel label="Sort By" val={props.filters.sort}
@@ -324,17 +397,36 @@ function FilterModal(props) {
             ]} />
         </div>
 
-        <button
-          onClick={props.onClose}
-          class="w-full mt-6 font-bold py-4 rounded-xl text-xs uppercase tracking-widest text-[#0c0e14]"
-          style="background: var(--p); box-shadow: 0 0 20px var(--p-glow)"
-        >
-          Apply Filters
-        </button>
+        <div class="grid grid-cols-2 gap-2 mt-6">
+          <button
+            onClick={props.onClear}
+            class="w-full font-bold py-4 rounded-xl text-xs uppercase tracking-widest"
+            style="background: var(--raised); color: var(--muted); border: 1px solid var(--border)"
+          >
+            Clear All
+          </button>
+          <button
+            onClick={props.onClose}
+            class="w-full font-bold py-4 rounded-xl text-xs uppercase tracking-widest text-[#0c0e14]"
+            style="background: var(--p); box-shadow: 0 0 20px var(--p-glow)"
+          >
+            Apply Filters
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+
+const RangeFilter = (props) => (
+  <div class="grid grid-cols-[90px_1fr] items-center gap-2">
+    <span class="label-mono">{props.label}</span>
+    <div class="grid grid-cols-2 gap-2">
+      <input value={props.min} onInput={e => props.setMin(e.target.value)} type="number" placeholder={props.minPlaceholder || 'Min'} class="w-full bg-[#0c0e14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[var(--p)]" />
+      <input value={props.max} onInput={e => props.setMax(e.target.value)} type="number" placeholder={props.maxPlaceholder || 'Max'} class="w-full bg-[#0c0e14] border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none focus:border-[var(--p)]" />
+    </div>
+  </div>
+);
 
 const FilterSel = (props) => (
   <div class="grid grid-cols-[90px_1fr] items-center gap-2">

@@ -145,8 +145,8 @@ export function DataSync(props) {
   return (
     <div class="animate-fade-in max-w-3xl mx-auto pb-10">
       <div class="flex items-center gap-3 mb-8 px-2">
-          <div class="w-10 h-10 bg-[var(--primary)]/20 rounded-full flex items-center justify-center border border-[var(--primary)]/50">
-              <Icon name="sync" class="text-[var(--primary)]" />
+          <div class="w-10 h-10 bg-[var(--p)]/20 rounded-full flex items-center justify-center border border-[var(--primary)]/50">
+              <Icon name="sync" class="text-[var(--p)]" />
           </div>
           <div>
               <h2 class="text-3xl font-headline font-black drop-shadow-md">Data Center</h2>
@@ -157,23 +157,23 @@ export function DataSync(props) {
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
           
           <div class="glass-surface p-6 sm:p-8 rounded-[2rem] border border-white/5 relative overflow-hidden flex flex-col justify-between">
-              <div class="absolute top-0 right-0 w-32 h-32 bg-[var(--primary)]/10 blur-[50px] rounded-full pointer-events-none"></div>
+              <div class="absolute top-0 right-0 w-32 h-32 bg-[var(--p)]/10 blur-[50px] rounded-full pointer-events-none"></div>
               
               <div>
-                  <h3 class="text-lg font-black text-white flex items-center gap-2 mb-2"><Icon name="build_circle" class="text-[var(--primary)]" /> Vault Repair Engine</h3>
+                  <h3 class="text-lg font-black text-white flex items-center gap-2 mb-2"><Icon name="build_circle" class="text-[var(--p)]" /> Vault Repair Engine</h3>
                   <p class="text-xs text-gray-400 leading-relaxed mb-6">Runs a deep background scan across all saved titles. Fetches missing streaming platforms, genres, and episodes from external APIs. Your personal edits remain 100% untouched.</p>
               </div>
 
               <Show when={isSyncing()}>
                   <div class="bg-black/50 p-4 rounded-2xl border border-white/5 mb-6 animate-pulse">
                       <div class="flex justify-between items-center mb-2">
-                          <span class="text-[9px] font-black uppercase text-[var(--primary)] tracking-widest flex items-center gap-1"><Icon name="radar" class="text-[12px] animate-spin"/> Scanning Network</span>
-                          <span class="text-[10px] font-bold text-white">{progress().current} / {progress().total}</span>
+                          <span class="text-[9px] font-black uppercase text-[var(--p)] tracking-widest flex items-center gap-1"><Icon name="radar" class="text-[12px] animate-spin"/> Scanning Network</span>
+                          <span class="text-[10px] font-black" style="color: var(--p)">{progress().current} / {progress().total}</span>
                       </div>
-                      <div class="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
-                          <div class="h-full bg-[var(--primary)] transition-all duration-300" style={{ width: `${progress().pct}%` }}></div>
+                      <div class="w-full h-2 bg-white/10 rounded-full overflow-hidden mb-3 shadow-inner">
+                          <div class="h-full transition-all duration-300" style={{ width: `${progress().pct}%`, background: "var(--p)", "box-shadow": "0 0 12px var(--p-glow)" }}></div>
                       </div>
-                      <p class="text-[10px] text-gray-500 font-bold truncate">{syncLog()}</p>
+                      <p class="text-[10px] text-gray-300 font-bold truncate">{syncLog()}</p>
                   </div>
               </Show>
 
@@ -229,13 +229,13 @@ export function DataSync(props) {
               <Show when={isImporting() || importStats().total > 0}>
                   <div class="bg-black/50 p-4 rounded-2xl border border-white/5 mt-2 animate-fade-in">
                       <div class="flex justify-between items-center mb-2">
-                          <span class="text-[9px] font-black uppercase tracking-widest text-[var(--primary)] flex items-center gap-1">
+                          <span class="text-[9px] font-black uppercase tracking-widest text-[var(--p)] flex items-center gap-1">
                               <Icon name={isImporting() ? "cloud_sync" : "cloud_done"} class="text-[12px]"/> {isImporting() ? 'Importing...' : 'Complete'}
                           </span>
                           <span class="text-[10px] font-bold text-white">{importStats().success + importStats().skipped} / {importStats().total}</span>
                       </div>
                       <div class="w-full h-1 bg-white/10 rounded-full overflow-hidden mb-3">
-                          <div class="h-full bg-[var(--primary)] transition-all duration-300" style={{ width: `${((importStats().success + importStats().skipped) / Math.max(importStats().total, 1)) * 100}%` }}></div>
+                          <div class="h-full bg-[var(--p)] transition-all duration-300" style={{ width: `${((importStats().success + importStats().skipped) / Math.max(importStats().total, 1)) * 100}%` }}></div>
                       </div>
                       <div class="flex gap-4 text-[10px] font-bold tracking-wide">
                           <span class="text-green-400">Success: {importStats().success}</span>
