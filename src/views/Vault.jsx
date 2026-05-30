@@ -49,16 +49,17 @@ export function Vault(props) {
     if (filters().tag !== 'all') f = f.filter(m => m.tag === filters().tag);
     
     return f.sort((a, b) => {
-      // NEW: Watch Date Sorting
-      if (filters().sort === 'watch_desc') {
-          const dA = a.watchDate ? new Date(a.watchDate).getTime() : (a.addedAt?.seconds * 1000 || 0);
-          const dB = b.watchDate ? new Date(b.watchDate).getTime() : (b.addedAt?.seconds * 1000 || 0);
-          return dB - dA; // Newest first
-      }
-      if (filters().sort === 'watch_asc') {
-          const dA = a.watchDate ? new Date(a.watchDate).getTime() : (a.addedAt?.seconds * 1000 || 0);
-          const dB = b.watchDate ? new Date(b.watchDate).getTime() : (b.addedAt?.seconds * 1000 || 0);
-          return dA - dB; // Oldest first
+      // Watch Date Sorting: do not fall back to vault-added date.
+      // Items without a valid watchDate are always pushed below dated titles.
+      if (filters().sort === 'watch_desc' || filters().sort === 'watch_asc') {
+          const dA = a.watchDate ? new Date(a.watchDate).getTime() : NaN;
+          const dB = b.watchDate ? new Date(b.watchDate).getTime() : NaN;
+          const hasA = !isNaN(dA);
+          const hasB = !isNaN(dB);
+          if (hasA && !hasB) return -1;
+          if (!hasA && hasB) return 1;
+          if (!hasA && !hasB) return 0;
+          return filters().sort === 'watch_desc' ? dB - dA : dA - dB;
       }
       
       // Existing Sorting

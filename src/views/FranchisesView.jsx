@@ -139,6 +139,36 @@ export function FranchisesView(props) {
     return [...out];
   });
 
+  const getNestedFolderIds = (folderId) => {
+    if (!folderId) return [];
+    const map = new Map();
+    props.franchises().forEach(f => {
+      const p = f.parentId || '__root__';
+      if (!map.has(p)) map.set(p, []);
+      map.get(p).push(f.id);
+    });
+    const out = new Set([folderId]);
+    const q = [folderId];
+    while (q.length) {
+      const x = q.shift();
+      (map.get(x) || []).forEach(id => {
+        if (!out.has(id)) {
+          out.add(id);
+          q.push(id);
+        }
+      });
+    }
+    return [...out];
+  };
+
+  const folderParentOptions = (folder) => {
+    if (!folder) return [];
+    const blocked = new Set(getNestedFolderIds(folder.id));
+    return props.franchises()
+      .filter(f => !blocked.has(f.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  };
+
   const currentMovies = createMemo(() => {
     let list = props.watchlist().filter(m => m.franchises && m.franchises[currentFolder()] !== undefined);
     return list.sort((a, b) =>
@@ -190,12 +220,19 @@ export function FranchisesView(props) {
   };
 
   const groupedByCollection = createMemo(() => {
+    const ids = new Set(nestedFolderIds());
+    const folderById = new Map(props.franchises().map(f => [f.id, f]));
     const map = new Map();
+
     flattenedMovies().forEach((m) => {
-      const key = detectSubCollectionName(m);
+      const childFolderId = Object.keys(m.franchises || {}).find(fid => fid !== currentFolder() && ids.has(fid));
+      const key = childFolderId && folderById.get(childFolderId)
+        ? folderById.get(childFolderId).name
+        : detectSubCollectionName(m);
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(m);
     });
+
     return [...map.entries()]
       .map(([name, items]) => ({
         name,
@@ -255,9 +292,10 @@ export function FranchisesView(props) {
   };
 
   const folderCard = (f) => {
-    const firstMovie = () => props.watchlist().find(m => m.franchises && m.franchises[f.id] !== undefined);
+    const folderIds = () => new Set(getNestedFolderIds(f.id));
+    const firstMovie = () => props.watchlist().find(m => m.franchises && Object.keys(m.franchises).some(fid => folderIds().has(fid)));
     const bgImage = () => f.coverImage || (firstMovie()?.backdrop_path ? `https://image.tmdb.org/t/p/w500${firstMovie().backdrop_path}` : 'none');
-    const movieCount = () => props.watchlist().filter(m => m.franchises && m.franchises[f.id] !== undefined).length;
+    const movieCount = () => props.watchlist().filter(m => m.franchises && Object.keys(m.franchises).some(fid => folderIds().has(fid))).length;
     return (
       <div onClick={() => setCurrentFolder(f.id)} class="relative rounded-[1.75rem] cursor-pointer group transition-all shadow-2xl flex flex-col justify-end min-h-[160px] overflow-hidden" style="border: 1px solid var(--border-active); background: var(--raised)">
         <Show when={bgImage() !== 'none'}>
@@ -273,7 +311,20 @@ export function FranchisesView(props) {
 
   return (
     <div class="pb-10 animate-fade-in">
-      <div class="flex justify-between items-center mb-6"><h2 class="font-headline text-4xl text-white">LISTS</h2><Show when={!currentFolder()} fallback={<button onClick={() => setShowAddModal(true)} class="px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 text-black" style="background: var(--p); box-shadow: 0 0 16px var(--p-glow)"><Icon name="playlist_add" class="text-base" /> Add Movie</button>}><button onClick={createFolder} class="px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 border" style="background: var(--surface); border-color: var(--border-active); color: var(--text)"><Icon name="add" class="text-base" /> Folder</button></Show></div>
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="font-headline text-4xl text-white">LISTS</h2>
+        <Show
+          when={!currentFolder()}
+          fallback={
+            <div class="flex items-center gap-2">
+              <button onClick={createFolder} class="px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 border" style="background: var(--surface); border-color: var(--border-active); color: var(--text)"><Icon name="create_new_folder" class="text-base" /> Sub Folder</button>
+              <button onClick={() => setShowAddModal(true)} class="px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 text-black" style="background: var(--p); box-shadow: 0 0 16px var(--p-glow)"><Icon name="playlist_add" class="text-base" /> Add Movie</button>
+            </div>
+          }
+        >
+          <button onClick={createFolder} class="px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 border" style="background: var(--surface); border-color: var(--border-active); color: var(--text)"><Icon name="add" class="text-base" /> Folder</button>
+        </Show>
+      </div>
       <Show when={currentFolder()}><button onClick={() => setCurrentFolder(null)} class="mb-6 glass-surface px-4 py-2 rounded-full text-white text-[10px] font-bold uppercase flex items-center gap-2 tracking-widest w-max active:scale-95" style="border-color: var(--border-active)"><Icon name="arrow_back" class="text-sm" /> Back</button></Show>
 
       <Show when={!currentFolder() && rootFolders().length > 0}><div class="flex flex-col gap-4 mb-10"><For each={rootFolders()}>{(f)=>folderCard(f)}</For></div></Show>
@@ -331,7 +382,7 @@ export function FranchisesView(props) {
           uid={props.uid}
           showToast={props.showToast}
           onClose={() => setEditingFolder(null)}
-          parentOptions={props.franchises().filter(f => f.id !== editingFolder()?.id)}
+          parentOptions={folderParentOptions(editingFolder())}
         />
       </Show>
     </div>
