@@ -1,7 +1,7 @@
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import { collection, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY, fetchWatchmodeSources } from '../utils';
+import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY, fetchTmdbWatchProviders } from '../utils';
 import { PersonModal } from './PersonModal';
 
 const DEFAULT_SERVERS = [
@@ -471,56 +471,58 @@ export function DetailsModal(props) {
           });
 
           const fetchProviders = async () => {
-              let apiProviders = [];
-              const wmSources = await fetchWatchmodeSources(movie().media_type, movie().id);
-              if (!wmSources) {
-                  setRichPlatforms([]);
-                  return;
-              }
+              const title = movie().title || movie().name;
+              const makeStoredProvider = (platform) => {
+                  const cleanP = cleanPlatform(platform);
+                  if (!cleanP) return null;
+                  const pData = getPlatformDict(title, cleanP);
+                  if (pData) return { name: pData.name, logo: pData.logo, url: pData.url, source: 'stored' };
+                  return { name: cleanP, isCss: true, color: getBrandColor(cleanP), url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}`, source: 'stored' };
+              };
+              const storedProviders = () => getSafePlatforms(movie()).map(makeStoredProvider).filter(Boolean);
 
-              if(wmSources.length > 0) {
+              try {
+                  const providerData = await Promise.race([
+                      fetchTmdbWatchProviders(movie().media_type, movie().id),
+                      new Promise(resolve => setTimeout(() => resolve(null), 3000))
+                  ]);
+                  const hasDisplayProviders = (region) => !!region && [region.flatrate, region.rent, region.buy].some(list => Array.isArray(list) && list.length > 0);
+                  const region = hasDisplayProviders(providerData?.results?.IN) ? providerData.results.IN : (hasDisplayProviders(providerData?.results?.US) ? providerData.results.US : null);
+                  const raw = region
+                    ? [...(region.flatrate || []), ...(region.rent || []), ...(region.buy || [])]
+                    : [];
                   const seen = new Set();
-                  for(let s of wmSources) {
-                      if(!seen.has(s.name) && (s.type === 'sub' || s.type === 'free')) {
-                          seen.add(s.name);
-                          apiProviders.push({ name: s.name, logo: s.logo_100px, url: s.web_url });
+                  const tmdbProviders = raw
+                    .map(p => {
+                        const name = cleanPlatform(p.provider_name) || p.provider_name;
+                        if (!name || seen.has(name)) return null;
+                        seen.add(name);
+                        return {
+                            name,
+                            logo: p.logo_path ? `https://image.tmdb.org/t/p/original${p.logo_path}` : null,
+                            url: region?.link || `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(name)}`,
+                            source: 'tmdb'
+                        };
+                    })
+                    .filter(Boolean)
+                    .slice(0, 6);
+
+                  if (tmdbProviders.length > 0) {
+                      setRichPlatforms(tmdbProviders);
+                      if (!isPreview() && !props.isGuest) {
+                          const currentDbPlatforms = movie().platformsList || [];
+                          const fetchedNames = tmdbProviders.map(p => p.name);
+                          const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n));
+                          if(missingInDb.length > 0) {
+                              const mergedPlatforms = [...new Set([...currentDbPlatforms, ...fetchedNames])];
+                              await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: mergedPlatforms });
+                          }
                       }
+                      return;
                   }
-              }
+              } catch (e) {}
 
-              let finalProviders = [];
-              const seenNames = new Set();
-              apiProviders.forEach(p => {
-                  const cName = cleanPlatform(p.name);
-                  if(cName && !seenNames.has(cName)) {
-                      seenNames.add(cName);
-                      finalProviders.push({...p, name: cName});
-                  }
-              });
-
-              const currentDbPlatforms = movie().platformsList || [];
-              const fetchedNames = finalProviders.map(p => p.name);
-              currentDbPlatforms.forEach(p => {
-                  const cleanP = cleanPlatform(p);
-                  if (!fetchedNames.includes(cleanP)) {
-                      const pData = getPlatformDict(title, cleanP);
-                      if (pData) {
-                          finalProviders.push({ name: pData.name, logo: pData.logo, url: pData.url });
-                      } else {
-                          finalProviders.push({ name: cleanP, isCss: true, color: getBrandColor(cleanP), url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}` });
-                      }
-                      fetchedNames.push(cleanP); 
-                  }
-              });
-
-              setRichPlatforms(finalProviders);
-              if (!isPreview() && !props.isGuest) {
-                  const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n));
-                  if(missingInDb.length > 0) {
-                      const mergedPlatforms = [...new Set([...currentDbPlatforms, ...fetchedNames])];
-                      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: mergedPlatforms });
-                  }
-              }
+              setRichPlatforms(storedProviders().slice(0, 6));
           };
           fetchProviders();
       } 
@@ -882,16 +884,16 @@ export function DetailsModal(props) {
                         <SafeInfoRow icon="connected_tv" label="Available On" value={
                             <Show when={richPlatforms().length > 0} fallback={<span class="text-xs font-bold text-gray-500">-</span>}>
                                 <div class="flex flex-wrap gap-2 mt-1">
-                                    <For each={richPlatforms().slice(0, 5)}>{(p) => (
-                                        <a href={p.url} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 bg-white/5 hover:bg-[var(--primary)]/20 border border-white/10 hover:border-[var(--primary)]/50 px-2.5 py-1.5 rounded-lg transition-all group shadow-sm">
-                                            <Show when={!p.isCss} fallback={
-                                                <div class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shadow-inner" style={{ "background-color": p.color, color: p.color === '#ffffff' ? '#000' : '#fff' }}>
+                                    <For each={richPlatforms().slice(0, 6)}>{(p) => (
+                                        <a href={p.url} target="_blank" rel="noopener noreferrer" title={p.name} class="flex flex-col items-center gap-1 bg-white/5 hover:bg-[var(--primary)]/20 border border-white/10 hover:border-[var(--primary)]/50 px-2 py-2 rounded-xl transition-all group shadow-sm min-w-[58px]">
+                                            <Show when={!p.isCss && p.logo} fallback={
+                                                <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shadow-inner" style={{ "background-color": p.color || 'var(--p-dim)', color: p.color === '#ffffff' ? '#000' : 'var(--p)' }}>
                                                     {p.name.charAt(0).toUpperCase()}
                                                 </div>
                                             }>
-                                                <img src={p.logo} class="w-4 h-4 rounded-full object-cover bg-black border border-white/10" />
+                                                <img src={p.logo} alt={p.name} class="w-7 h-7 rounded-lg object-cover bg-black border border-white/10" loading="lazy" />
                                             </Show>
-                                            <span class="text-[9px] font-black text-gray-300 group-hover:text-white uppercase tracking-widest">{p.name}</span>
+                                            <span class="text-[8px] font-black text-gray-300 group-hover:text-white uppercase tracking-widest max-w-[54px] truncate">{p.name}</span>
                                         </a>
                                     )}</For>
                                 </div>

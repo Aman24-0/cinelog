@@ -1,7 +1,7 @@
 import { createSignal, Show, For } from 'solid-js';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, TMDB_KEY, cleanPlatform, fetchWatchmodeSources } from '../utils';
+import { Icon, TMDB_KEY, cleanPlatform } from '../utils';
 
 
 export function DataSync(props) {
@@ -47,10 +47,6 @@ export function DataSync(props) {
               }
           }
 
-          const wmSources = await fetchWatchmodeSources(item.media_type, item.id);
-          if (Array.isArray(wmSources)) {
-              wmSources.forEach(s => { if (s.type === 'sub' || s.type === 'free') fetchedPlatforms.push(s.name); });
-          }
 
           const currentDbPlatforms = item.platformsList || [];
           let finalNames = new Set([...currentDbPlatforms]);
