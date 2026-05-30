@@ -4,6 +4,7 @@ import { MovieCard } from '../components/MovieCard';
 import { AIRecommend } from '../components/AIRecommend';
 
 export function Dashboard(props) {
+
   const stats = createMemo(() => ({
     total:     props.watchlist().length,
     completed: props.watchlist().filter(m => m.status === 'Completed').length,
@@ -13,7 +14,15 @@ export function Dashboard(props) {
 
   const continueWatchingList = createMemo(() => {
     return props.watchlist()
-      .filter(m => m.watchProgress && m.watchProgress.currentTime > 0 && m.status !== 'Completed')
+      .filter(m => {
+        if (!m.watchProgress || m.watchProgress.currentTime <= 0 || m.status === 'Completed') return false;
+        if (m.media_type !== 'tv') return true;
+        const wpSeason = parseInt(m.watchProgress.season || 1);
+        const wpEpisode = parseInt(m.watchProgress.episode || 1);
+        const currentSeason = parseInt(m.season || 1);
+        const currentEpisode = parseInt(m.episode || 1);
+        return wpSeason === currentSeason && wpEpisode === currentEpisode;
+      })
       .sort((a, b) => new Date(b.watchProgress.updatedAt).getTime() - new Date(a.watchProgress.updatedAt).getTime());
   });
 
@@ -136,6 +145,7 @@ export function Dashboard(props) {
         </div>
       </div>
 
+
       {/* ── CONTINUE WATCHING (MOVED HERE) ── */}
       <Show when={continueWatchingList().length > 0}>
         <div class="animate-fade-up mt-2">
@@ -146,7 +156,14 @@ export function Dashboard(props) {
           <div class="flex gap-4 overflow-x-auto hide-scrollbar pb-4 snap-x">
             <For each={continueWatchingList()}>
               {(m) => {
-                 const pct = m.watchProgress.duration > 0 ? Math.min(100, Math.max(0, (m.watchProgress.currentTime / m.watchProgress.duration) * 100)) : 0;
+                 const runtimeBasedDuration = (Number(m.runtime) > 0 ? Number(m.runtime) * 60 : 0);
+                 const fallbackDuration = m.media_type === 'tv' ? 45 * 60 : 120 * 60;
+                 const effectiveDuration = Number(m.watchProgress.duration) > 0
+                  ? Math.max(Number(m.watchProgress.duration), runtimeBasedDuration || 0)
+                  : (runtimeBasedDuration || fallbackDuration);
+                 const pct = effectiveDuration > 0
+                  ? Math.min(100, Math.max(0, (Number(m.watchProgress.currentTime || 0) / effectiveDuration) * 100))
+                  : 0;
                  const bgImg = m.backdrop_path ? `https://image.tmdb.org/t/p/w500${m.backdrop_path}` : (m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : '');
 
                  return (
@@ -206,7 +223,7 @@ export function Dashboard(props) {
       {/* ── AI RECOMMENDATIONS ── */}
       <Show when={!props.isGuest}>
         <div class="mt-2">
-          <AIRecommend watchlist={props.watchlist} />
+          <AIRecommend watchlist={props.watchlist} onSearch={props.onSearch} />
         </div>
       </Show>
 

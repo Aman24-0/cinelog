@@ -1,7 +1,7 @@
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
-import { doc, updateDoc, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
+import { collection, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY } from '../utils';
+import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY, fetchWatchmodeSources } from '../utils';
 import { PersonModal } from './PersonModal';
 
 const DEFAULT_SERVERS = [
@@ -89,9 +89,172 @@ export function DetailsModal(props) {
   const [customServers, setCustomServers] = createSignal({});
   
   const [watchProgress, setWatchProgress] = createSignal(null);
+  const [contentDuration, setContentDuration] = createSignal(0);
+  const [playerSessionStart, setPlayerSessionStart] = createSignal(null);
+  const [playerStartProgress, setPlayerStartProgress] = createSignal(0);
+  const [selectedSeason, setSelectedSeason] = createSignal(null);
+  const [seasonEpisodes, setSeasonEpisodes] = createSignal({});
+  const [seasonsLoading, setSeasonsLoading] = createSignal(false);
+  const [expandedEpisodes, setExpandedEpisodes] = createSignal({});
+  const [watchedEpisodes, setWatchedEpisodes] = createSignal({});
   let autoPlayTriggered = false;
 
-  const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
+
+  const inferDurationSeconds = () => {
+    const d = details();
+    const mins = d?.runtime || d?.episode_run_time?.[0] || movie()?.runtime || 0;
+    const sec = Number(mins) * 60;
+    if (Number.isFinite(sec) && sec > 0) return sec;
+    return movie()?.media_type === 'tv' ? 45 * 60 : 120 * 60;
+  };
+
+
+  const tvSeasons = createMemo(() => (details().seasons || [])
+    .filter(s => Number(s.season_number) > 0)
+    .sort((a, b) => Number(a.season_number) - Number(b.season_number)));
+
+  const selectedSeasonData = createMemo(() => tvSeasons().find(s => Number(s.season_number) === Number(selectedSeason())));
+  const selectedSeasonEpisodes = createMemo(() => seasonEpisodes()[selectedSeason()]?.episodes || []);
+  const currentSeasonNumber = createMemo(() => parseInt(form().season || movie()?.season || 1) || 1);
+  const currentEpisodeNumber = createMemo(() => parseInt(form().episode || movie()?.episode || 1) || 1);
+  const episodeDocId = (season, episode) => `s${season}_e${episode}`;
+  const compareEpisodePosition = (aSeason, aEpisode, bSeason, bEpisode) => (Number(aSeason) - Number(bSeason)) || (Number(aEpisode) - Number(bEpisode));
+  const getEpisodesForSeason = (season) => (seasonEpisodes()[season]?.episodes || []).slice().sort((a, b) => Number(a.episode_number) - Number(b.episode_number));
+  const findNextEpisodePointer = (season, episode) => {
+    const currentSeasonEpisodes = getEpisodesForSeason(season);
+    const nextInSeason = currentSeasonEpisodes.find(ep => Number(ep.episode_number) > Number(episode));
+    if (nextInSeason) return { season: Number(season), episode: Number(nextInSeason.episode_number) };
+
+    const nextSeason = tvSeasons().find(s => Number(s.season_number) > Number(season));
+    if (!nextSeason) return null;
+    const nextSeasonNumber = Number(nextSeason.season_number);
+    const nextSeasonEpisodes = getEpisodesForSeason(nextSeasonNumber);
+    return { season: nextSeasonNumber, episode: Number(nextSeasonEpisodes[0]?.episode_number || 1) };
+  };
+  const getCurrentEpisode = () => {
+    const season = currentSeasonNumber();
+    const episode = currentEpisodeNumber();
+    return getEpisodesForSeason(season).find(ep => Number(ep.episode_number) === episode) || { season_number: season, episode_number: episode, name: `Episode ${episode}` };
+  };
+  const seasonCacheKey = () => `tmdb_${movie()?.id}_seasons`;
+  const cacheIsFresh = (cache) => cache?.timestamp && (Date.now() - cache.timestamp < 24 * 60 * 60 * 1000);
+
+  const getStoredSeasonCache = () => {
+    try { return JSON.parse(localStorage.getItem(seasonCacheKey()) || '{}'); } catch (e) { return {}; }
+  };
+
+  const writeStoredSeasonCache = (cache) => {
+    try { localStorage.setItem(seasonCacheKey(), JSON.stringify(cache)); } catch (e) {}
+  };
+
+  const loadWatchedEpisodes = async () => {
+    if (props.isGuest || !props.uid || isPreview() || movie()?.media_type !== 'tv') return;
+    try {
+      const snap = await getDocs(collection(db, 'users', props.uid, 'watchlist', String(movie().id), 'episodes'));
+      const next = {};
+      snap.docs.forEach(d => { next[d.id] = d.data(); });
+      setWatchedEpisodes(next);
+    } catch (e) {}
+  };
+
+  const fetchSeasonEpisodes = async (seasonNumber, forceRefresh = false) => {
+    if (!movie()?.id || movie()?.media_type !== 'tv' || !seasonNumber) return;
+    const cache = getStoredSeasonCache();
+    const cachedSeason = cache?.seasons?.[seasonNumber];
+    if (!forceRefresh && cacheIsFresh(cache) && cachedSeason) {
+      setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: cachedSeason }));
+      return;
+    }
+
+    setSeasonsLoading(true);
+    try {
+      const res = await fetch(`https://api.themoviedb.org/3/tv/${movie().id}/season/${seasonNumber}?api_key=${TMDB_KEY}`);
+      if (!res.ok) throw new Error('season fetch failed');
+      const season = await res.json();
+      const nextCache = {
+        timestamp: Date.now(),
+        seasons: { ...(cache.seasons || {}), [seasonNumber]: season }
+      };
+      writeStoredSeasonCache(nextCache);
+      setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: season }));
+    } catch (e) {
+      if (cachedSeason) setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: cachedSeason }));
+    } finally {
+      setSeasonsLoading(false);
+    }
+  };
+
+  const updateCurrentEpisodePointer = async (nextPointer, completed = false) => {
+    const nextSeason = Number(nextPointer?.season || currentSeasonNumber());
+    const nextEpisode = Number(nextPointer?.episode || currentEpisodeNumber());
+    const nextStatus = completed ? 'Completed' : (movie()?.status === 'Planned' || movie()?.status === 'Plan to Watch' || movie()?.status === 'Completed' ? 'Watching' : (movie()?.status || 'Watching'));
+    const nextProgress = {
+      currentTime: 0,
+      duration: inferDurationSeconds() || 0,
+      server: activeServer() || null,
+      updatedAt: new Date().toISOString(),
+      season: nextSeason,
+      episode: nextEpisode
+    };
+
+    setForm(prev => ({ ...prev, season: nextSeason, episode: nextEpisode, status: nextStatus }));
+    setWatchProgress(nextProgress);
+    setPlayerStartProgress(0);
+
+    if (!props.isGuest && props.uid && movie() && !isPreview()) {
+      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), {
+        season: nextSeason,
+        episode: nextEpisode,
+        status: nextStatus,
+        watchProgress: nextProgress
+      });
+    }
+  };
+
+  const toggleEpisodeWatched = async (ep) => {
+    if (props.isGuest) {
+      props.showToast("Sign in to track episodes! 🔒");
+      if (props.onLogin) props.onLogin();
+      return;
+    }
+    if (!props.uid || !movie() || !ep) return;
+
+    const season = Number(ep.season_number || selectedSeason() || currentSeasonNumber());
+    const episode = Number(ep.episode_number || 1);
+    const id = episodeDocId(season, episode);
+    const isWatched = !!watchedEpisodes()[id]?.watched;
+    const nextWatched = !isWatched;
+    const payload = {
+      watched: nextWatched,
+      season,
+      episode,
+      episodeId: id,
+      title: ep.name || '',
+      airDate: ep.air_date || '',
+      runtime: ep.runtime || null,
+      updatedAt: new Date().toISOString()
+    };
+
+    setWatchedEpisodes(prev => ({ ...prev, [id]: payload }));
+
+    try {
+      await setDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id), 'episodes', id), payload, { merge: true });
+
+      if (nextWatched) {
+        const nextPointer = findNextEpisodePointer(season, episode);
+        await updateCurrentEpisodePointer(nextPointer || { season, episode }, !nextPointer);
+        props.showToast(nextPointer ? `S${season} E${episode} watched — next S${nextPointer.season} E${nextPointer.episode}` : `S${season} E${episode} watched — show completed`);
+      } else {
+        if (compareEpisodePosition(currentSeasonNumber(), currentEpisodeNumber(), season, episode) > 0 || movie()?.status === 'Completed') {
+          await updateCurrentEpisodePointer({ season, episode }, false);
+        }
+        props.showToast(`S${season} E${episode} marked unwatched`);
+      }
+    } catch (e) {
+      setWatchedEpisodes(prev => ({ ...prev, [id]: { ...payload, watched: isWatched } }));
+      props.showToast("Could not update episode. Try again.");
+    }
+  };
 
   const availableServers = createMemo(() => {
     const custom = customServers();
@@ -126,14 +289,25 @@ export function DetailsModal(props) {
 
         if (msg?.type === 'MEDIA_DATA' && msg?.data) {
             const cTime = msg.data.currentTime || msg.data.time || 0;
-            const dur = msg.data.duration || 100;
-            if (cTime > 0) setWatchProgress({ currentTime: cTime, duration: dur }); 
+            const dur = msg.data.duration || contentDuration() || inferDurationSeconds() || 0;
+            if (cTime > 0) {
+              if (dur > 0) setContentDuration(dur);
+              setWatchProgress({ currentTime: cTime, duration: dur }); 
+            }
         }
         else if (msg?.event === 'timeupdate' && msg?.currentTime) {
-            if (msg.currentTime > 0) setWatchProgress({ currentTime: msg.currentTime, duration: msg.duration || 100 });
+            const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
+            if (msg.currentTime > 0) {
+              if (dur > 0) setContentDuration(dur);
+              setWatchProgress({ currentTime: msg.currentTime, duration: dur });
+            }
         }
         else if (msg?.currentTime !== undefined && typeof msg.currentTime === 'number') {
-            if (msg.currentTime > 0) setWatchProgress({ currentTime: msg.currentTime, duration: msg.duration || 100 });
+            const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
+            if (msg.currentTime > 0) {
+              if (dur > 0) setContentDuration(dur);
+              setWatchProgress({ currentTime: msg.currentTime, duration: dur });
+            }
         }
     } catch (e) {}
   };
@@ -146,9 +320,11 @@ export function DetailsModal(props) {
               const updates = {
                   watchProgress: {
                       currentTime: prog.currentTime,
-                      duration: prog.duration || 100,
+                      duration: prog.duration || contentDuration() || inferDurationSeconds() || 0,
                       server: activeServer(),
-                      updatedAt: new Date().toISOString()
+                      updatedAt: new Date().toISOString(),
+                      season: currentSeasonNumber(),
+                      episode: currentEpisodeNumber()
                   }
               };
               
@@ -166,6 +342,18 @@ export function DetailsModal(props) {
       }
   };
 
+  const hydrateSessionProgressFromElapsed = () => {
+    const startedAt = playerSessionStart();
+    if (!startedAt) return;
+    const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    const base = Math.max(0, Number(playerStartProgress()) || 0);
+    const dur = contentDuration() || watchProgress()?.duration || inferDurationSeconds() || 0;
+    const next = dur > 0 ? Math.min(base + elapsed, dur) : base + elapsed;
+    if (next > base) {
+      setWatchProgress({ currentTime: next, duration: dur });
+    }
+  };
+
   createEffect(() => {
       if (isResume() && movie() && !autoPlayTriggered) {
           const serversList = availableServers();
@@ -178,10 +366,15 @@ export function DetailsModal(props) {
               setTimeout(() => {
                   // Failsafe injection
                   if (movie().watchProgress) {
+                      if (movie().watchProgress.duration) setContentDuration(movie().watchProgress.duration);
                       setWatchProgress(movie().watchProgress);
                   } else {
-                      setWatchProgress({ currentTime: 5, duration: 100 });
+                      const inferred = inferDurationSeconds();
+                      if (inferred > 0) setContentDuration(inferred);
+                      setWatchProgress({ currentTime: 0, duration: inferred });
                   }
+                  setPlayerStartProgress(movie().watchProgress?.currentTime || 0);
+                  setPlayerSessionStart(Date.now());
                   setShowPlayer(true);
               }, 200);
           }
@@ -198,9 +391,30 @@ export function DetailsModal(props) {
     }
   });
 
+
+  createEffect(() => {
+    if (movie()?.media_type !== 'tv') return;
+    const seasons = tvSeasons();
+    if (!seasons.length) return;
+    const preferred = Number(movie().season || seasons[0].season_number || 1);
+    const exists = seasons.some(s => Number(s.season_number) === preferred);
+    if (!selectedSeason()) setSelectedSeason(exists ? preferred : Number(seasons[0].season_number));
+  });
+
+  createEffect(() => {
+    const seasonNumber = selectedSeason();
+    if (movie()?.media_type === 'tv' && seasonNumber) fetchSeasonEpisodes(seasonNumber);
+  });
+
+  createEffect(() => {
+    const m = movie();
+    if (m?.media_type === 'tv' && !isPreview()) loadWatchedEpisodes();
+  });
+
   onMount(() => { document.body.style.overflow = 'hidden'; window.addEventListener('message', handlePlayerMessages); }); 
   
   onCleanup(() => { 
+      hydrateSessionProgressFromElapsed();
       saveProgressToDb(); 
       document.body.style.overflow = ''; 
       window.removeEventListener('message', handlePlayerMessages); 
@@ -226,8 +440,19 @@ export function DetailsModal(props) {
               });
           }
           
-          fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}?api_key=${TMDB_KEY}&append_to_response=videos,credits`).then(r=>r.json()).then(d=>{ 
+          fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}?api_key=${TMDB_KEY}&append_to_response=videos,credits`).then(r=>r.json()).then(async d=>{
               setDetails(d);
+              if (movie().media_type === 'tv' && !isPreview() && !props.isGuest) {
+                  const regularSeasons = (d.seasons || []).filter(s => Number(s.season_number) > 0);
+                  const latestSeason = regularSeasons.reduce((max, s) => Math.max(max, Number(s.season_number) || 0), 0);
+                  const previousKnown = Number(movie().latestTmdbSeason || movie().totalSeasons || 0);
+                  const hasNewSeason = previousKnown > 0 && latestSeason > previousKnown;
+                  if (latestSeason > 0 && latestSeason !== previousKnown) {
+                      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { latestTmdbSeason: latestSeason, newSeasonAvailable: hasNewSeason });
+                  }
+              }
+              const inferred = (d?.runtime || d?.episode_run_time?.[0] || 0) * 60;
+              if (inferred > 0) setContentDuration(inferred);
               const v = d?.videos?.results; if(v){ let t = v.find(x=>x.site==='YouTube'&&x.type==='Trailer')||v.find(x=>x.site==='YouTube'&&x.type==='Teaser')||v.find(x=>x.site==='YouTube'); if(t) setTrailerKey(t.key); }
               if (!isPreview() && !props.isGuest && d.genres && d.genres.length > 0) {
                   const apiGenres = d.genres.map(g => g.name).join(', ');
@@ -247,36 +472,20 @@ export function DetailsModal(props) {
 
           const fetchProviders = async () => {
               let apiProviders = [];
-              try {
-                  const wmType = movie().media_type === 'tv' ? 'tv' : 'movie';
-                  const wmRes = await fetch(`https://api.watchmode.com/v1/title/${wmType}-${movie().id}/sources/?apiKey=${WATCHMODE_KEY}&regions=IN,US`);
-                  const wmSources = await wmRes.json();
-                  if(Array.isArray(wmSources) && wmSources.length > 0) {
-                      const seen = new Set();
-                      for(let s of wmSources) {
-                          if(!seen.has(s.name) && (s.type === 'sub' || s.type === 'free')) {
-                              seen.add(s.name);
-                              apiProviders.push({ name: s.name, logo: s.logo_100px, url: s.web_url });
-                          }
+              const wmSources = await fetchWatchmodeSources(movie().media_type, movie().id);
+              if (!wmSources) {
+                  setRichPlatforms([]);
+                  return;
+              }
+
+              if(wmSources.length > 0) {
+                  const seen = new Set();
+                  for(let s of wmSources) {
+                      if(!seen.has(s.name) && (s.type === 'sub' || s.type === 'free')) {
+                          seen.add(s.name);
+                          apiProviders.push({ name: s.name, logo: s.logo_100px, url: s.web_url });
                       }
                   }
-              } catch(e) {}
-
-              if(apiProviders.length === 0) {
-                  try {
-                      const tmdbRes = await fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}/watch/providers?api_key=${TMDB_KEY}`);
-                      const tmdbData = await tmdbRes.json();
-                      const inData = tmdbData.results?.IN || tmdbData.results?.US; 
-                      if(inData && (inData.flatrate || inData.free || inData.ads)) {
-                          const raw = [...(inData.flatrate||[]), ...(inData.free||[]), ...(inData.ads||[])];
-                          apiProviders = raw.map(p => {
-                              const cleanN = cleanPlatform(p.provider_name);
-                              const pData = getPlatformDict(title, cleanN);
-                              const customUrl = pData?.url || tmdbData.results?.IN?.link || `https://www.justwatch.com/in/search?q=${encodeURIComponent(title)}`;
-                              return { name: p.provider_name, logo: `https://image.tmdb.org/t/p/w92${p.logo_path}`, url: customUrl };
-                          });
-                      }
-                  } catch(e) {}
               }
 
               let finalProviders = [];
@@ -325,25 +534,52 @@ export function DetailsModal(props) {
       if (props.onLogin) props.onLogin();
       return;
     }
-    await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { 
+    const nextSeason = parseInt(form().season) || 1;
+    const nextEpisode = parseInt(form().episode) || 1;
+    const prevSeason = parseInt(movie().season) || 1;
+    const prevEpisode = parseInt(movie().episode) || 1;
+    const episodeChanged = movie().media_type === 'tv' && (nextSeason !== prevSeason || nextEpisode !== prevEpisode);
+
+    const updates = { 
       status: form().status, 
       rating: parseFloat(form().rating)||0, 
       watchDate: form().watchDate, 
       seasonDates: form().seasonDates,
       notes: form().notes, 
       region: form().region, 
-      season: parseInt(form().season)||1, 
-      episode: parseInt(form().episode)||1, 
+      season: nextSeason, 
+      episode: nextEpisode, 
       tag: form().tag, 
       genresList: form().genres.split(',').map(s=>s.trim()).filter(Boolean), 
       platformsList: form().platforms.split(',').map(s=>cleanPlatform(s.trim())).filter(Boolean) 
-    }); 
+    };
+
+    if (episodeChanged) {
+      const inferred = inferDurationSeconds();
+      updates.watchProgress = {
+        currentTime: 0,
+        duration: inferred || 0,
+        server: activeServer() || null,
+        updatedAt: new Date().toISOString(),
+        season: nextSeason,
+        episode: nextEpisode
+      };
+      setWatchProgress({ currentTime: 0, duration: inferred || 0 });
+      setPlayerStartProgress(0);
+    }
+
+    await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), updates); 
     props.showToast("Saved"); 
     setIsEdit(false); 
   };
   
-  const isCompleted = createMemo(() => !isPreview() && movie()?.status === 'Completed');
-  const progressPct = createMemo(() => isCompleted() ? 100 : Math.min(((movie()?.episode||0) / (movie()?.totalEps||1)) * 100, 100));
+  const isCompleted = createMemo(() => !isPreview() && (form().status || movie()?.status) === 'Completed');
+  const progressPct = createMemo(() => {
+    if (isCompleted()) return 100;
+    const loadedSeasonTotal = getEpisodesForSeason(currentSeasonNumber()).length;
+    const total = Number(movie()?.totalEps) || loadedSeasonTotal || 1;
+    return Math.min((currentEpisodeNumber() / total) * 100, 100);
+  });
   const movieFranchises = createMemo(() => props.franchises?.filter(f => movie()?.franchises?.[f.id] !== undefined).map(f => f.name).join(', '));
 
   const addToVaultFromPreview = async () => {
@@ -372,8 +608,8 @@ export function DetailsModal(props) {
   const getStreamUrl = (serverId) => { 
     if (!serverId) return '';
     const id = movie().id; 
-    const s = movie().season || 1; 
-    const e = movie().episode || 1; 
+    const s = movie().media_type === 'tv' ? currentSeasonNumber() : (movie().season || 1);
+    const e = movie().media_type === 'tv' ? currentEpisodeNumber() : (movie().episode || 1);
     const type = movie().media_type === 'tv' ? 'tv' : 'movie';
     
     const serverConfig = availableServers().find(srv => srv.id === serverId);
@@ -383,9 +619,21 @@ export function DetailsModal(props) {
     if(!urlTemplate) return '';
     
     let timeParam = '';
-    if (movie().watchProgress && movie().watchProgress.server === serverId && movie().watchProgress.currentTime > 0) {
+    const canResumeFromProgress = movie().watchProgress
+      && movie().watchProgress.server === serverId
+      && movie().watchProgress.currentTime > 0
+      && (
+        movie().media_type !== 'tv' ||
+        (
+          parseInt(movie().watchProgress.season || 1) === parseInt(movie().season || 1) &&
+          parseInt(movie().watchProgress.episode || 1) === parseInt(movie().episode || 1)
+        )
+      );
+    if (canResumeFromProgress) {
         const t = Math.floor(movie().watchProgress.currentTime);
-        timeParam = urlTemplate.includes('?') ? `&t=${t}` : `?t=${t}`; 
+        timeParam = urlTemplate.includes('?')
+          ? `&t=${t}&start=${t}&time=${t}`
+          : `?t=${t}&start=${t}&time=${t}`; 
     }
     
     return urlTemplate
@@ -474,11 +722,16 @@ export function DetailsModal(props) {
                             
                             // Guarantee progress injection so it NEVER fails
                             if (!movie().watchProgress || movie().watchProgress.currentTime === 0) {
-                                setWatchProgress({ currentTime: 5, duration: 100 }); 
+                                const inferred = inferDurationSeconds();
+                                if (inferred > 0) setContentDuration(inferred);
+                                setWatchProgress({ currentTime: 0, duration: inferred }); 
                             } else {
+                                if (movie().watchProgress.duration) setContentDuration(movie().watchProgress.duration);
                                 setWatchProgress(movie().watchProgress);
                             }
                             
+                            setPlayerStartProgress(movie().watchProgress?.currentTime || 0);
+                            setPlayerSessionStart(Date.now());
                             setShowPlayer(true); 
                         }}
                           class="w-full mt-3 font-black py-4 rounded-xl uppercase text-[11px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -492,20 +745,104 @@ export function DetailsModal(props) {
                     <p class="text-gray-400 text-sm mb-6 leading-relaxed italic border-l-2 border-[var(--primary)]/30 pl-3">"{details().overview || (typeof movie().overview === 'string' ? movie().overview : 'No overview available.')}"</p>
                     
                     <Show when={!isPreview() && movie().media_type === 'tv'}>
+                        <div class="glass-surface rounded-[1.75rem] border border-white/10 mb-6 overflow-hidden shadow-2xl" style="background: linear-gradient(145deg, rgba(14,16,24,0.95), rgba(5,6,10,0.92)); border-color: var(--border-active)">
+                            <div class="p-5 border-b border-white/5">
+                                <div class="flex items-center justify-between gap-3 mb-4">
+                                    <div>
+                                        <p class="text-[10px] font-black uppercase tracking-[0.22em] flex items-center gap-2" style="color: var(--p)"><Icon name="live_tv" class="text-[15px]"/> Seasons & Episodes</p>
+                                        <p class="text-[11px] text-gray-500 font-bold mt-1">Track every episode with latest TMDB season data.</p>
+                                    </div>
+                                    <Show when={movie().newSeasonAvailable}>
+                                        <span class="shrink-0 text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border" style="color: var(--p); background: var(--p-dim); border-color: var(--p)">New Season</span>
+                                    </Show>
+                                </div>
+                                <div class="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
+                                    <For each={tvSeasons()}>
+                                        {(s) => (
+                                            <button type="button" onClick={() => setSelectedSeason(Number(s.season_number))}
+                                                class="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border shrink-0 active:scale-95"
+                                                style={Number(selectedSeason()) === Number(s.season_number)
+                                                  ? 'background: var(--p); color: #05060a; border-color: var(--p); box-shadow: 0 0 16px var(--p-glow)'
+                                                  : 'background: rgba(255,255,255,0.04); color: var(--muted); border-color: var(--border)'}>
+                                                S{s.season_number}
+                                            </button>
+                                        )}
+                                    </For>
+                                </div>
+                            </div>
+
+                            <Show when={!seasonsLoading()} fallback={
+                                <div class="p-4 space-y-3">
+                                    <For each={[1,2,3]}>
+                                      {() => <div class="h-28 rounded-2xl skeleton-bg border border-white/5" />}
+                                    </For>
+                                </div>
+                            }>
+                                <div class="p-4 space-y-3 max-h-[560px] overflow-y-auto hide-scrollbar">
+                                    <Show when={selectedSeasonEpisodes().length > 0} fallback={
+                                        <div class="text-center py-10">
+                                            <Icon name="live_tv" class="text-4xl text-gray-700 mb-2" />
+                                            <p class="text-xs font-bold text-gray-500">Episode data is not available yet.</p>
+                                        </div>
+                                    }>
+                                        <For each={selectedSeasonEpisodes()}>
+                                            {(ep) => {
+                                                const epId = episodeDocId(ep.season_number || selectedSeason(), ep.episode_number);
+                                                const watched = createMemo(() => !!watchedEpisodes()[epId]?.watched);
+                                                const expanded = createMemo(() => !!expandedEpisodes()[epId]);
+                                                return (
+                                                  <div class="group rounded-2xl border border-white/5 bg-black/30 hover:bg-white/[0.035] hover:border-[var(--p)]/40 transition-all overflow-hidden">
+                                                    <div class="flex gap-3 p-3">
+                                                        <div class="relative w-28 sm:w-36 aspect-video rounded-xl overflow-hidden bg-[#11131b] shrink-0 border border-white/5">
+                                                            <Show when={ep.still_path} fallback={<div class="w-full h-full skeleton-bg flex items-center justify-center"><Icon name="movie" class="text-2xl text-gray-700" /></div>}>
+                                                                <img src={`https://image.tmdb.org/t/p/w300${ep.still_path}`} loading="lazy" class={`w-full h-full object-cover transition-all duration-300 ${watched() ? 'opacity-45 grayscale' : 'group-hover:scale-105'}`} />
+                                                            </Show>
+                                                            <Show when={watched()}>
+                                                                <div class="absolute inset-0 flex items-center justify-center bg-black/20"><Icon name="check_circle" fill class="text-3xl" style="color: var(--p)" /></div>
+                                                            </Show>
+                                                        </div>
+                                                        <div class="min-w-0 flex-1">
+                                                            <div class="flex items-start justify-between gap-3">
+                                                                <div class="min-w-0">
+                                                                    <h4 class="font-black text-white text-sm leading-snug">E{ep.episode_number} — {ep.name || 'Untitled Episode'}</h4>
+                                                                    <div class="flex flex-wrap gap-2 mt-1.5 text-[9px] font-bold uppercase tracking-widest text-gray-500">
+                                                                        <span>{ep.air_date || 'Air date TBA'}</span>
+                                                                        <Show when={ep.runtime}><span>• {ep.runtime} min</span></Show>
+                                                                    </div>
+                                                                </div>
+                                                                <button type="button" onClick={(e) => { e.stopPropagation(); toggleEpisodeWatched(ep); }}
+                                                                    class="shrink-0 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border active:scale-95"
+                                                                    style={watched()
+                                                                      ? 'background: var(--p2); color: #05060a; border-color: var(--p2); box-shadow: 0 0 16px rgba(255,255,255,0.08)'
+                                                                      : 'background: var(--p-dim); color: var(--p); border-color: var(--p)'}>
+                                                                    {watched() ? 'Watched ✓' : 'Watch'}
+                                                                </button>
+                                                            </div>
+                                                            <button type="button" onClick={() => setExpandedEpisodes(prev => ({ ...prev, [epId]: !expanded() }))} class="text-left w-full mt-2">
+                                                                <p class={`text-xs text-gray-400 leading-relaxed transition-all duration-300 ${expanded() ? '' : 'line-clamp-2'}`}>{ep.overview || 'No episode overview available.'}</p>
+                                                                <span class="inline-flex items-center gap-1 mt-1 text-[9px] font-black uppercase tracking-widest" style="color: var(--p)">{expanded() ? 'Show less' : 'More'} <Icon name={expanded() ? 'expand_less' : 'expand_more'} class="text-xs" /></span>
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                  </div>
+                                                );
+                                            }}
+                                        </For>
+                                    </Show>
+                                </div>
+                            </Show>
+                        </div>
+                    </Show>
+
+                    <Show when={!isPreview() && movie().media_type === 'tv'}>
                         <div class="glass-surface p-5 rounded-2xl border border-white/5 mb-6">
                             <div class="flex justify-between items-center mb-3">
                                 <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2"><Icon name="video_library" class="text-[14px] text-[var(--primary)]"/> Tracker</span>
-                                <span class="font-black text-sm text-white">{isCompleted() ? 'Completed' : `S${movie().season||1} E${movie().episode||1}`}</span>
+                                <span class="font-black text-sm text-white">{isCompleted() ? 'Completed' : `S${currentSeasonNumber()} E${currentEpisodeNumber()}`}</span>
                             </div>
                             <div class="w-full h-2 bg-black rounded-full overflow-hidden mb-4"><div class="h-full bg-[var(--primary)] transition-all shadow-[0_0_10px_var(--primary)]" style={{width:`${progressPct()}%`}}></div></div>
                             <Show when={!isCompleted()}>
-                                <button onClick={async () => { 
-                                    if (props.isGuest) {
-                                      props.showToast("Sign in to track progress! 🔒");
-                                      if (props.onLogin) props.onLogin();
-                                      return;
-                                    }
-                                    let n = (parseInt(movie().episode)||1)+1; let s = movie().status==='Planned'?'Watching':movie().status; if(movie().totalEps>0 && n>=movie().totalEps) { s='Completed'; props.showToast("Completed! 🎉"); } await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), {episode: n, status: s}); }} class="w-full bg-[var(--primary)]/10 text-[var(--primary)] border border-[var(--primary)]/30 rounded-xl py-2 text-[10px] font-black uppercase tracking-widest hover:bg-[var(--primary)] hover:text-[#0c0e14] active:scale-95 transition-all">+1 Episode</button>
+                                <button onClick={() => toggleEpisodeWatched(getCurrentEpisode())} class="w-full rounded-xl py-2 text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all" style="background: var(--p-dim); color: var(--p); border: 1px solid var(--p)">Mark Current Watched → Next Episode</button>
                             </Show>
                         </div>
                     </Show>
@@ -594,7 +931,7 @@ export function DetailsModal(props) {
                     </div>
 
                     <Show when={isPreview()}>
-                        <button onClick={addToVaultFromPreview} class="w-full mt-6 bg-gradient-to-r from-[var(--secondary)] to-[var(--primary)] text-[#0c0e14] font-black py-4 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform shadow-lg shadow-[var(--primary)]/20 flex items-center justify-center gap-2">
+                        <button onClick={addToVaultFromPreview} class="w-full mt-6 font-black py-4 px-5 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform flex items-center justify-center gap-2 border" style="background: var(--p); color: #05060a; border-color: var(--p); box-shadow: 0 0 24px var(--p-glow); min-height: 52px; opacity: 1; visibility: visible">
                             <Icon name="add_circle" class="text-lg"/> Add to My Universe
                         </button>
                     </Show>
@@ -677,7 +1014,10 @@ export function DetailsModal(props) {
             <div class="flex items-center gap-3 overflow-hidden pr-2 flex-1">
                 <button type="button" onClick={(e) => { 
                     e.stopPropagation(); 
+                    hydrateSessionProgressFromElapsed();
                     saveProgressToDb();
+                    setPlayerSessionStart(null);
+                    setPlayerStartProgress(0);
                     setShowPlayer(false); 
                 }} class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all shrink-0"><Icon name="arrow_back" class="text-sm" /></button>
                 <h3 class="font-bold text-sm text-white truncate max-w-[150px]">{movie().title || movie().name}</h3>

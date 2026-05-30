@@ -27,10 +27,16 @@ export const MovieCard = (props) => (
         {props.movie.status === 'Plan to Watch' ? 'Planned' : (props.movie.status || 'NEW')}
       </div>
 
-      {/* Tag */}
-      <Show when={props.movie.tag}>
-        <div class="absolute top-2 right-2 tag-chip text-white max-w-[60px] truncate">
-          {props.movie.tag}
+      {/* Tag / New season badge */}
+      <Show when={props.movie.newSeasonAvailable} fallback={
+        <Show when={props.movie.tag}>
+          <div class="absolute top-2 right-2 tag-chip text-white max-w-[60px] truncate">
+            {props.movie.tag}
+          </div>
+        </Show>
+      }>
+        <div class="absolute top-2 right-2 tag-chip max-w-[88px] truncate" style="color: var(--p); background: rgba(0,0,0,0.72); border-color: var(--p); box-shadow: 0 0 14px var(--p-glow)">
+          New Season
         </div>
       </Show>
 
