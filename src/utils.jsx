@@ -1,6 +1,30 @@
 export const TMDB_KEY = import.meta.env.VITE_TMDB_API_KEY;
 export const OMDB_KEY = import.meta.env.VITE_OMDB_API_KEY;
 
+
+const TMDB_PROVIDER_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const fetchTmdbWatchProviders = async (mediaType, id) => {
+  if (!id || !TMDB_KEY) return null;
+  const type = mediaType === 'tv' ? 'tv' : 'movie';
+  const cacheKey = `tmdb_providers_${type}_${id}`;
+
+  try {
+    const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+    if (cached?.timestamp && Date.now() - cached.timestamp < TMDB_PROVIDER_CACHE_MS) return cached.data;
+  } catch (e) {}
+
+  try {
+    const res = await fetch(`https://api.themoviedb.org/3/${type}/${id}/watch/providers?api_key=${TMDB_KEY}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    try { localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data })); } catch (e) {}
+    return data;
+  } catch (e) {
+    return null;
+  }
+};
+
 export const cleanPlatform = (p) => {
   if (!p) return null; const l = p.toLowerCase();
   if (l.includes('netflix')) return 'Netflix'; if (l.includes('prime') || l.includes('amazon')) return 'Amazon Prime Video';

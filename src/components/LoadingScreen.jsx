@@ -1,9 +1,17 @@
+import { onMount, onCleanup } from 'solid-js';
 import { Icon } from '../utils';
 
 export function LoadingScreen() {
+  onMount(() => {
+    document.body.style.overflow = 'hidden';
+  });
+  onCleanup(() => {
+    document.body.style.overflow = '';
+  });
+
   return (
-    <div class="h-screen w-full flex items-center justify-center overflow-hidden relative"
-      style="background: var(--void)">
+    <div class="fixed inset-0 flex items-center justify-center overflow-hidden"
+      style="width: 100vw; height: 100vh; background: var(--void); z-index: 9999999; overscroll-behavior: none">
 
       {/* Ambient orbs */}
       <div class="orb-primary" />

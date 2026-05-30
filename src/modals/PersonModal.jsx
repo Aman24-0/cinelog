@@ -158,12 +158,17 @@ export function PersonModal(props) {
                     class="relative group cursor-pointer animate-fade-in"
                     onClick={() => props.openPreview(item, 'fromPerson')}
                   >
-                    <img
-                      src={item.poster_path
-                        ? `https://image.tmdb.org/t/p/w342${item.poster_path}`
-                        : 'https://via.placeholder.com/342x513/171921/b1a1ff?text=No+Poster'}
-                      class="w-full aspect-[2/3] object-cover rounded-xl shadow-lg border border-white/10 group-hover:border-[var(--primary)] transition-all"
-                    />
+                    <Show when={item.poster_path} fallback={
+                      <div class="w-full aspect-[2/3] rounded-xl shadow-lg border border-white/10 group-hover:border-[var(--primary)] transition-all bg-[#171921] flex items-center justify-center text-center p-2">
+                        <span class="text-[10px] font-black uppercase tracking-widest text-gray-500">No Poster</span>
+                      </div>
+                    }>
+                      <img
+                        src={`https://image.tmdb.org/t/p/w342${item.poster_path}`}
+                        class="w-full aspect-[2/3] object-cover rounded-xl shadow-lg border border-white/10 group-hover:border-[var(--primary)] transition-all"
+                        loading="lazy"
+                      />
+                    </Show>
                     {/* Name — always visible */}
                     <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent rounded-xl flex flex-col justify-end p-2 pointer-events-none">
                       <p class="text-[9px] font-black text-white truncate leading-tight">{item.title || item.name}</p>

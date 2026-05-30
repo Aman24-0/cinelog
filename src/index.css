@@ -14,10 +14,10 @@
 body.theme-sage       { --p: #a8ff78; --p2: #ff78c4; --p-glow: rgba(168,255,120,0.22); --p-dim: rgba(168,255,120,0.08); }
 body.theme-matrix     { --p: #39ff14; --p2: #00f5a0; --p-glow: rgba(57,255,20,0.22);  --p-dim: rgba(57,255,20,0.08); }
 body.theme-netflix    { --p: #ff2d55; --p2: #ff9500; --p-glow: rgba(255,45,85,0.22);  --p-dim: rgba(255,45,85,0.08); }
-body.theme-cyberpunk  { --p: #ffe600; --p2: #ff003c; --p-glow: rgba(255,230,0,0.22); --p-dim: rgba(255,230,0,0.08); }
 body.theme-interstellar { --p: #00c2ff; --p2: #f9a620; --p-glow: rgba(0,194,255,0.22); --p-dim: rgba(0,194,255,0.08); }
 body.theme-neonhorizon { --p: #ff2af0; --p2: #00ffe7; --p-glow: rgba(255,42,240,0.22); --p-dim: rgba(255,42,240,0.08); }
 body.theme-vibranium  { --p: #9d4edd; --p2: #06ffd4; --p-glow: rgba(157,78,221,0.22); --p-dim: rgba(157,78,221,0.08); }
+body.theme-cinematic { --p: #FFD700; --p2: #FF6B00; --p-glow: rgba(255,215,0,0.40); --p-dim: rgba(255,215,0,0.10); --void: #0A0A0F; --deep: #0d0d14; --surface: #12121A; --raised: #171722; --border: rgba(255,215,0,0.10); --border-active: rgba(255,215,0,0.40); --text: #F5F5F5; --muted: #8A8A9A; --dim: rgba(138,138,154,0.32); }
 
 :root {
   --void: #05060a;
@@ -245,3 +245,74 @@ select option { background: var(--raised); }
 
 /* transitions global */
 button, a { transition: all 0.25s cubic-bezier(0.22,1,0.36,1); }
+
+
+/* ── CINEMATIC THEME EXTRAS ── */
+body.theme-cinematic::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.035;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(255,255,255,0.95) 0 1px, transparent 1px),
+    radial-gradient(circle at 80% 70%, rgba(255,215,0,0.7) 0 1px, transparent 1px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0 1px, transparent 1px 4px);
+  background-size: 46px 46px, 67px 67px, 100% 100%;
+  mix-blend-mode: screen;
+}
+
+body.theme-cinematic .font-headline,
+body.theme-cinematic h1,
+body.theme-cinematic h2,
+body.theme-cinematic h3 {
+  background: linear-gradient(180deg, #fff8c6 0%, #FFD700 48%, #FF9B00 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 18px rgba(255,215,0,0.10);
+}
+
+body.theme-cinematic .movie-card {
+  transform-style: preserve-3d;
+  perspective: 900px;
+}
+body.theme-cinematic .movie-card:hover {
+  transform: translateY(-8px) rotateX(3deg) rotateY(-4deg) scale(1.025);
+}
+body.theme-cinematic .movie-card:hover .movie-card-inner {
+  border-color: rgba(255,215,0,0.82);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.78), 0 0 28px rgba(255,215,0,0.38), inset 0 0 22px rgba(255,215,0,0.07);
+}
+
+body.theme-cinematic button[style*="var(--p)"],
+body.theme-cinematic .hero-picker,
+body.theme-cinematic .stat-card {
+  position: relative;
+  overflow: hidden;
+}
+body.theme-cinematic button[style*="var(--p)"]::after,
+body.theme-cinematic .hero-picker::after,
+body.theme-cinematic .stat-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -140%;
+  width: 65%;
+  height: 100%;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 0%, rgba(255,255,255,0.34) 50%, transparent 100%);
+  transform: skewX(-18deg);
+  transition: left 0.7s cubic-bezier(0.22,1,0.36,1);
+}
+body.theme-cinematic button[style*="var(--p)"]:hover::after,
+body.theme-cinematic .hero-picker:hover::after,
+body.theme-cinematic .stat-card:hover::after {
+  left: 145%;
+}
+
+body.theme-cinematic .skeleton-bg {
+  background: linear-gradient(90deg, rgba(255,215,0,0.03) 25%, rgba(255,215,0,0.18) 50%, rgba(255,107,0,0.04) 75%);
+  background-size: 200% 100%;
+}
