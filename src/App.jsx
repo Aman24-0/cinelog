@@ -11,10 +11,11 @@ import { Vault } from './views/Vault';
 import { FranchisesView } from './views/FranchisesView';
 import { UpcomingView } from './views/UpcomingView';
 import { DataSync } from './views/DataSync';
+import { Analytics } from './views/Analytics';
 import { DetailsModal } from './modals/DetailsModal';
 import { SearchModal } from './modals/SearchModal';
 import { ServerSettingsModal } from './modals/ServerSettingsModal';
-import { InsightsModal, SettingsModal } from './modals/Modals';
+import { SettingsModal } from './modals/Modals';
 
 const NavBtn = (props) => (
   <button
@@ -50,17 +51,19 @@ export default function App() {
   const [watchlist, setWatchlist] = createSignal([]);
   const [franchises, setFranchises] = createSignal([]);
   const [view, setView] = createSignal('dashboard');
-  const [theme, setTheme] = createSignal(localStorage.getItem('cinelog_theme') || 'sage');
+  const storedTheme = localStorage.getItem('cinelog_theme');
+  const legacyTheme = ['cyber', 'punk'].join('');
+  const [theme, setTheme] = createSignal(storedTheme === legacyTheme ? 'cinematic' : (storedTheme || 'sage'));
   const [loading, setLoading] = createSignal(true);
   const [splashWait, setSplashWait] = createSignal(true);
   const [activeVaultStatus, setActiveVaultStatus] = createSignal('all');
 
   const [searchModal, setSearchModal] = createSignal(false);
+  const [searchInitialQuery, setSearchInitialQuery] = createSignal('');
   const [detailsId, setDetailsId] = createSignal(null);
   const [previewSource, setPreviewSource] = createSignal(null);
   const [settingsModal, setSettingsModal] = createSignal(false);
   const [serverSettingsModal, setServerSettingsModal] = createSignal(false);
-  const [statsModal, setStatsModal] = createSignal(false);
   const [userMenuOpen, setUserMenuOpen] = createSignal(false);
   const [toast, setToast] = createSignal({ show: false, msg: '' });
 
@@ -166,7 +169,7 @@ export default function App() {
                   <div class="fixed inset-0 z-[90]" onClick={() => setUserMenuOpen(false)} />
                   <div class="absolute right-0 mt-3 w-52 glass-surface rounded-2xl shadow-2xl py-2 z-[100] animate-pop-in overflow-hidden"
                     style="border-color: var(--border-active)">
-                    <button onClick={() => { setStatsModal(true); setUserMenuOpen(false); }}
+                    <button onClick={() => { setView('analytics'); setUserMenuOpen(false); }}
                       class="w-full text-left px-5 py-3 text-sm font-semibold flex items-center gap-3 hover:bg-white/5 transition-colors"
                       style="color: var(--p)">
                       <Icon name="bar_chart" class="text-[18px]" /> Insights
@@ -199,7 +202,7 @@ export default function App() {
         {/* ── MAIN ── */}
         <main class="p-5 max-w-2xl lg:max-w-none lg:px-12 mx-auto relative z-10">
           <Show when={view() === 'dashboard'}>
-            <Dashboard watchlist={watchlist} openMovie={setDetailsId} setView={setView} showToast={showToast} setActiveVaultStatus={setActiveVaultStatus} isGuest={!user()} onLogin={handleLogin} />
+            <Dashboard watchlist={watchlist} openMovie={setDetailsId} setView={setView} showToast={showToast} setActiveVaultStatus={setActiveVaultStatus} isGuest={!user()} onLogin={handleLogin} uid={user()?.uid} onSearch={(term) => { setSearchInitialQuery(term || ''); setSearchModal(true); }} />
           </Show>
           <Show when={view() === 'watchlist'}>
             <Vault watchlist={watchlist} openMovie={setDetailsId} activeStatus={activeVaultStatus()} onFilterChange={setActiveVaultStatus} isGuest={!user()} onLogin={handleLogin} />
@@ -207,6 +210,11 @@ export default function App() {
           <Show when={view() === 'franchises'}>
             <Show when={user()} fallback={<GuestPrompt onLogin={handleLogin} />}>
               <FranchisesView watchlist={watchlist} franchises={franchises} uid={user().uid} openMovie={setDetailsId} showToast={showToast} />
+            </Show>
+          </Show>
+          <Show when={view() === 'analytics'}>
+            <Show when={user()} fallback={<GuestPrompt onLogin={handleLogin} />}>
+              <Analytics watchlist={watchlist} />
             </Show>
           </Show>
           <Show when={view() === 'upcoming'}>
@@ -228,7 +236,7 @@ export default function App() {
             {/* Center Add button */}
             <div class="relative -mt-8 lg:mt-0 mx-1">
               <button
-                onClick={() => setSearchModal(true)}
+                onClick={() => { setSearchInitialQuery(''); setSearchModal(true); }}
                 class="w-14 h-14 rounded-full flex items-center justify-center text-black font-black border-4 active:scale-95 lg:w-full lg:h-auto lg:py-4 lg:rounded-2xl lg:border-none lg:flex-row lg:gap-3 lg:px-6"
                 style="background: var(--p); border-color: var(--void); box-shadow: 0 0 24px var(--p-glow), 0 8px 20px rgba(0,0,0,0.5)"
               >
@@ -245,14 +253,14 @@ export default function App() {
         {/* ── MODALS ── */}
         <Show when={searchModal()}>
           <SearchModal
-            onClose={() => setSearchModal(false)}
+            onClose={() => { setSearchModal(false); setSearchInitialQuery(''); }}
             uid={user()?.uid}
+            initialQuery={searchInitialQuery()}
             showToast={showToast}
             watchlist={watchlist()}
             isGuest={!user()}
             onLogin={() => { setSearchModal(false); handleLogin(); }}
             openPreview={(item, source) => {
-              if (source !== 'fromPerson') setSearchModal(false);
               setPreviewSource(source || 'search');
               setDetailsId(`PREVIEW_${JSON.stringify(item)}`);
             }}
@@ -264,9 +272,8 @@ export default function App() {
             watchlist={watchlist()}
             franchises={franchises()}
             onClose={() => {
-              const src = previewSource();
-              setDetailsId(null); setPreviewSource(null);
-              if (src === 'fromPerson') setSearchModal(true);
+              setDetailsId(null);
+              setPreviewSource(null);
             }}
             uid={user()?.uid}
             showToast={showToast}
@@ -274,9 +281,6 @@ export default function App() {
             isGuest={!user()}
             onLogin={() => { setDetailsId(null); handleLogin(); }}
           />
-        </Show>
-        <Show when={statsModal()}>
-          <InsightsModal watchlist={watchlist} onClose={() => setStatsModal(false)} />
         </Show>
         <Show when={settingsModal()}>
           <SettingsModal currentTheme={theme()} setTheme={setTheme} onClose={() => setSettingsModal(false)} />
