@@ -1,7 +1,7 @@
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import { collection, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY } from '../utils';
+import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY, fetchTmdbWatchProviders } from '../utils';
 import { PersonModal } from './PersonModal';
 
 const DEFAULT_SERVERS = [
@@ -99,7 +99,162 @@ export function DetailsModal(props) {
   const [watchedEpisodes, setWatchedEpisodes] = createSignal({});
   let autoPlayTriggered = false;
 
-  const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
+
+  const inferDurationSeconds = () => {
+    const d = details();
+    const mins = d?.runtime || d?.episode_run_time?.[0] || movie()?.runtime || 0;
+    const sec = Number(mins) * 60;
+    if (Number.isFinite(sec) && sec > 0) return sec;
+    return movie()?.media_type === 'tv' ? 45 * 60 : 120 * 60;
+  };
+
+
+  const tvSeasons = createMemo(() => (details().seasons || [])
+    .filter(s => Number(s.season_number) > 0)
+    .sort((a, b) => Number(a.season_number) - Number(b.season_number)));
+
+  const selectedSeasonData = createMemo(() => tvSeasons().find(s => Number(s.season_number) === Number(selectedSeason())));
+  const selectedSeasonEpisodes = createMemo(() => seasonEpisodes()[selectedSeason()]?.episodes || []);
+  const currentSeasonNumber = createMemo(() => parseInt(form().season || movie()?.season || 1) || 1);
+  const currentEpisodeNumber = createMemo(() => parseInt(form().episode || movie()?.episode || 1) || 1);
+  const episodeDocId = (season, episode) => `s${season}_e${episode}`;
+  const compareEpisodePosition = (aSeason, aEpisode, bSeason, bEpisode) => (Number(aSeason) - Number(bSeason)) || (Number(aEpisode) - Number(bEpisode));
+  const getEpisodesForSeason = (season) => (seasonEpisodes()[season]?.episodes || []).slice().sort((a, b) => Number(a.episode_number) - Number(b.episode_number));
+  const findNextEpisodePointer = (season, episode) => {
+    const currentSeasonEpisodes = getEpisodesForSeason(season);
+    const nextInSeason = currentSeasonEpisodes.find(ep => Number(ep.episode_number) > Number(episode));
+    if (nextInSeason) return { season: Number(season), episode: Number(nextInSeason.episode_number) };
+
+    const nextSeason = tvSeasons().find(s => Number(s.season_number) > Number(season));
+    if (!nextSeason) return null;
+    const nextSeasonNumber = Number(nextSeason.season_number);
+    const nextSeasonEpisodes = getEpisodesForSeason(nextSeasonNumber);
+    return { season: nextSeasonNumber, episode: Number(nextSeasonEpisodes[0]?.episode_number || 1) };
+  };
+  const getCurrentEpisode = () => {
+    const season = currentSeasonNumber();
+    const episode = currentEpisodeNumber();
+    return getEpisodesForSeason(season).find(ep => Number(ep.episode_number) === episode) || { season_number: season, episode_number: episode, name: `Episode ${episode}` };
+  };
+  const seasonCacheKey = () => `tmdb_${movie()?.id}_seasons`;
+  const cacheIsFresh = (cache) => cache?.timestamp && (Date.now() - cache.timestamp < 24 * 60 * 60 * 1000);
+
+  const getStoredSeasonCache = () => {
+    try { return JSON.parse(localStorage.getItem(seasonCacheKey()) || '{}'); } catch (e) { return {}; }
+  };
+
+  const writeStoredSeasonCache = (cache) => {
+    try { localStorage.setItem(seasonCacheKey(), JSON.stringify(cache)); } catch (e) {}
+  };
+
+  const loadWatchedEpisodes = async () => {
+    if (props.isGuest || !props.uid || isPreview() || movie()?.media_type !== 'tv') return;
+    try {
+      const snap = await getDocs(collection(db, 'users', props.uid, 'watchlist', String(movie().id), 'episodes'));
+      const next = {};
+      snap.docs.forEach(d => { next[d.id] = d.data(); });
+      setWatchedEpisodes(next);
+    } catch (e) {}
+  };
+
+  const fetchSeasonEpisodes = async (seasonNumber, forceRefresh = false) => {
+    if (!movie()?.id || movie()?.media_type !== 'tv' || !seasonNumber) return;
+    const cache = getStoredSeasonCache();
+    const cachedSeason = cache?.seasons?.[seasonNumber];
+    if (!forceRefresh && cacheIsFresh(cache) && cachedSeason) {
+      setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: cachedSeason }));
+      return;
+    }
+
+    setSeasonsLoading(true);
+    try {
+      const res = await fetch(`https://api.themoviedb.org/3/tv/${movie().id}/season/${seasonNumber}?api_key=${TMDB_KEY}`);
+      if (!res.ok) throw new Error('season fetch failed');
+      const season = await res.json();
+      const nextCache = {
+        timestamp: Date.now(),
+        seasons: { ...(cache.seasons || {}), [seasonNumber]: season }
+      };
+      writeStoredSeasonCache(nextCache);
+      setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: season }));
+    } catch (e) {
+      if (cachedSeason) setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: cachedSeason }));
+    } finally {
+      setSeasonsLoading(false);
+    }
+  };
+
+  const updateCurrentEpisodePointer = async (nextPointer, completed = false) => {
+    const nextSeason = Number(nextPointer?.season || currentSeasonNumber());
+    const nextEpisode = Number(nextPointer?.episode || currentEpisodeNumber());
+    const nextStatus = completed ? 'Completed' : (movie()?.status === 'Planned' || movie()?.status === 'Plan to Watch' || movie()?.status === 'Completed' ? 'Watching' : (movie()?.status || 'Watching'));
+    const nextProgress = {
+      currentTime: 0,
+      duration: inferDurationSeconds() || 0,
+      server: activeServer() || null,
+      updatedAt: new Date().toISOString(),
+      season: nextSeason,
+      episode: nextEpisode
+    };
+
+    setForm(prev => ({ ...prev, season: nextSeason, episode: nextEpisode, status: nextStatus }));
+    setWatchProgress(nextProgress);
+    setPlayerStartProgress(0);
+
+    if (!props.isGuest && props.uid && movie() && !isPreview()) {
+      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), {
+        season: nextSeason,
+        episode: nextEpisode,
+        status: nextStatus,
+        watchProgress: nextProgress
+      });
+    }
+  };
+
+  const toggleEpisodeWatched = async (ep) => {
+    if (props.isGuest) {
+      props.showToast("Sign in to track episodes! 🔒");
+      if (props.onLogin) props.onLogin();
+      return;
+    }
+    if (!props.uid || !movie() || !ep) return;
+
+    const season = Number(ep.season_number || selectedSeason() || currentSeasonNumber());
+    const episode = Number(ep.episode_number || 1);
+    const id = episodeDocId(season, episode);
+    const isWatched = !!watchedEpisodes()[id]?.watched;
+    const nextWatched = !isWatched;
+    const payload = {
+      watched: nextWatched,
+      season,
+      episode,
+      episodeId: id,
+      title: ep.name || '',
+      airDate: ep.air_date || '',
+      runtime: ep.runtime || null,
+      updatedAt: new Date().toISOString()
+    };
+
+    setWatchedEpisodes(prev => ({ ...prev, [id]: payload }));
+
+    try {
+      await setDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id), 'episodes', id), payload, { merge: true });
+
+      if (nextWatched) {
+        const nextPointer = findNextEpisodePointer(season, episode);
+        await updateCurrentEpisodePointer(nextPointer || { season, episode }, !nextPointer);
+        props.showToast(nextPointer ? `S${season} E${episode} watched — next S${nextPointer.season} E${nextPointer.episode}` : `S${season} E${episode} watched — show completed`);
+      } else {
+        if (compareEpisodePosition(currentSeasonNumber(), currentEpisodeNumber(), season, episode) > 0 || movie()?.status === 'Completed') {
+          await updateCurrentEpisodePointer({ season, episode }, false);
+        }
+        props.showToast(`S${season} E${episode} marked unwatched`);
+      }
+    } catch (e) {
+      setWatchedEpisodes(prev => ({ ...prev, [id]: { ...payload, watched: isWatched } }));
+      props.showToast("Could not update episode. Try again.");
+    }
+  };
 
   const inferDurationSeconds = () => {
     const d = details();
@@ -472,72 +627,58 @@ export function DetailsModal(props) {
           });
 
           const fetchProviders = async () => {
-              let apiProviders = [];
+              const title = movie().title || movie().name;
+              const makeStoredProvider = (platform) => {
+                  const cleanP = cleanPlatform(platform);
+                  if (!cleanP) return null;
+                  const pData = getPlatformDict(title, cleanP);
+                  if (pData) return { name: pData.name, logo: pData.logo, url: pData.url, source: 'stored' };
+                  return { name: cleanP, isCss: true, color: getBrandColor(cleanP), url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}`, source: 'stored' };
+              };
+              const storedProviders = () => getSafePlatforms(movie()).map(makeStoredProvider).filter(Boolean);
+
               try {
-                  const wmType = movie().media_type === 'tv' ? 'tv' : 'movie';
-                  const wmRes = await fetch(`https://api.watchmode.com/v1/title/${wmType}-${movie().id}/sources/?apiKey=${WATCHMODE_KEY}&regions=IN,US`);
-                  const wmSources = await wmRes.json();
-                  if(Array.isArray(wmSources) && wmSources.length > 0) {
-                      const seen = new Set();
-                      for(let s of wmSources) {
-                          if(!seen.has(s.name) && (s.type === 'sub' || s.type === 'free')) {
-                              seen.add(s.name);
-                              apiProviders.push({ name: s.name, logo: s.logo_100px, url: s.web_url });
+                  const providerData = await Promise.race([
+                      fetchTmdbWatchProviders(movie().media_type, movie().id),
+                      new Promise(resolve => setTimeout(() => resolve(null), 3000))
+                  ]);
+                  const hasDisplayProviders = (region) => !!region && [region.flatrate, region.rent, region.buy].some(list => Array.isArray(list) && list.length > 0);
+                  const region = hasDisplayProviders(providerData?.results?.IN) ? providerData.results.IN : (hasDisplayProviders(providerData?.results?.US) ? providerData.results.US : null);
+                  const raw = region
+                    ? [...(region.flatrate || []), ...(region.rent || []), ...(region.buy || [])]
+                    : [];
+                  const seen = new Set();
+                  const tmdbProviders = raw
+                    .map(p => {
+                        const name = cleanPlatform(p.provider_name) || p.provider_name;
+                        if (!name || seen.has(name)) return null;
+                        seen.add(name);
+                        return {
+                            name,
+                            logo: p.logo_path ? `https://image.tmdb.org/t/p/original${p.logo_path}` : null,
+                            url: region?.link || `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(name)}`,
+                            source: 'tmdb'
+                        };
+                    })
+                    .filter(Boolean)
+                    .slice(0, 6);
+
+                  if (tmdbProviders.length > 0) {
+                      setRichPlatforms(tmdbProviders);
+                      if (!isPreview() && !props.isGuest) {
+                          const currentDbPlatforms = movie().platformsList || [];
+                          const fetchedNames = tmdbProviders.map(p => p.name);
+                          const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n));
+                          if(missingInDb.length > 0) {
+                              const mergedPlatforms = [...new Set([...currentDbPlatforms, ...fetchedNames])];
+                              await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: mergedPlatforms });
                           }
                       }
+                      return;
                   }
-              } catch(e) {}
+              } catch (e) {}
 
-              if(apiProviders.length === 0) {
-                  try {
-                      const tmdbRes = await fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}/watch/providers?api_key=${TMDB_KEY}`);
-                      const tmdbData = await tmdbRes.json();
-                      const inData = tmdbData.results?.IN || tmdbData.results?.US; 
-                      if(inData && (inData.flatrate || inData.free || inData.ads)) {
-                          const raw = [...(inData.flatrate||[]), ...(inData.free||[]), ...(inData.ads||[])];
-                          apiProviders = raw.map(p => {
-                              const cleanN = cleanPlatform(p.provider_name);
-                              const pData = getPlatformDict(title, cleanN);
-                              const customUrl = pData?.url || tmdbData.results?.IN?.link || `https://www.justwatch.com/in/search?q=${encodeURIComponent(title)}`;
-                              return { name: p.provider_name, logo: `https://image.tmdb.org/t/p/w92${p.logo_path}`, url: customUrl };
-                          });
-                      }
-                  } catch(e) {}
-              }
-
-              let finalProviders = [];
-              const seenNames = new Set();
-              apiProviders.forEach(p => {
-                  const cName = cleanPlatform(p.name);
-                  if(cName && !seenNames.has(cName)) {
-                      seenNames.add(cName);
-                      finalProviders.push({...p, name: cName});
-                  }
-              });
-
-              const currentDbPlatforms = movie().platformsList || [];
-              const fetchedNames = finalProviders.map(p => p.name);
-              currentDbPlatforms.forEach(p => {
-                  const cleanP = cleanPlatform(p);
-                  if (!fetchedNames.includes(cleanP)) {
-                      const pData = getPlatformDict(title, cleanP);
-                      if (pData) {
-                          finalProviders.push({ name: pData.name, logo: pData.logo, url: pData.url });
-                      } else {
-                          finalProviders.push({ name: cleanP, isCss: true, color: getBrandColor(cleanP), url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}` });
-                      }
-                      fetchedNames.push(cleanP); 
-                  }
-              });
-
-              setRichPlatforms(finalProviders);
-              if (!isPreview() && !props.isGuest) {
-                  const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n));
-                  if(missingInDb.length > 0) {
-                      const mergedPlatforms = [...new Set([...currentDbPlatforms, ...fetchedNames])];
-                      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: mergedPlatforms });
-                  }
-              }
+              setRichPlatforms(storedProviders().slice(0, 6));
           };
           fetchProviders();
       } 
@@ -899,16 +1040,16 @@ export function DetailsModal(props) {
                         <SafeInfoRow icon="connected_tv" label="Available On" value={
                             <Show when={richPlatforms().length > 0} fallback={<span class="text-xs font-bold text-gray-500">-</span>}>
                                 <div class="flex flex-wrap gap-2 mt-1">
-                                    <For each={richPlatforms().slice(0, 5)}>{(p) => (
-                                        <a href={p.url} target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 bg-white/5 hover:bg-[var(--primary)]/20 border border-white/10 hover:border-[var(--primary)]/50 px-2.5 py-1.5 rounded-lg transition-all group shadow-sm">
-                                            <Show when={!p.isCss} fallback={
-                                                <div class="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shadow-inner" style={{ "background-color": p.color, color: p.color === '#ffffff' ? '#000' : '#fff' }}>
+                                    <For each={richPlatforms().slice(0, 6)}>{(p) => (
+                                        <a href={p.url} target="_blank" rel="noopener noreferrer" title={p.name} class="flex flex-col items-center gap-1 bg-white/5 hover:bg-[var(--primary)]/20 border border-white/10 hover:border-[var(--primary)]/50 px-2 py-2 rounded-xl transition-all group shadow-sm min-w-[58px]">
+                                            <Show when={!p.isCss && p.logo} fallback={
+                                                <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shadow-inner" style={{ "background-color": p.color || 'var(--p-dim)', color: p.color === '#ffffff' ? '#000' : 'var(--p)' }}>
                                                     {p.name.charAt(0).toUpperCase()}
                                                 </div>
                                             }>
-                                                <img src={p.logo} class="w-4 h-4 rounded-full object-cover bg-black border border-white/10" />
+                                                <img src={p.logo} alt={p.name} class="w-7 h-7 rounded-lg object-cover bg-black border border-white/10" loading="lazy" />
                                             </Show>
-                                            <span class="text-[9px] font-black text-gray-300 group-hover:text-white uppercase tracking-widest">{p.name}</span>
+                                            <span class="text-[8px] font-black text-gray-300 group-hover:text-white uppercase tracking-widest max-w-[54px] truncate">{p.name}</span>
                                         </a>
                                     )}</For>
                                 </div>

@@ -3,7 +3,6 @@ import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, TMDB_KEY, cleanPlatform } from '../utils';
 
-const WATCHMODE_KEY = "QQQ2oiV5GK9fIM0sjEfgHwMTjGtusEYSy6I8TIfp";
 
 export function DataSync(props) {
   const [isSyncing, setIsSyncing] = createSignal(false);
@@ -48,14 +47,6 @@ export function DataSync(props) {
               }
           }
 
-          const wmType = item.media_type === 'tv' ? 'tv' : 'movie';
-          const wmRes = await fetch(`https://api.watchmode.com/v1/title/${wmType}-${item.id}/sources/?apiKey=${WATCHMODE_KEY}&regions=IN,US`);
-          if (wmRes.ok) {
-              const wmSources = await wmRes.json();
-              if (Array.isArray(wmSources)) {
-                  wmSources.forEach(s => { if (s.type === 'sub' || s.type === 'free') fetchedPlatforms.push(s.name); });
-              }
-          }
 
           const currentDbPlatforms = item.platformsList || [];
           let finalNames = new Set([...currentDbPlatforms]);
