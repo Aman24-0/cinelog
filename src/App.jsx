@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onMount, ErrorBoundary, Show } from 'solid-js';
 import { collection, onSnapshot, query, orderBy, writeBatch, getDocs } from 'firebase/firestore';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
+import { browserPopupRedirectResolver, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
 
 import { db, auth } from './firebase';
 import { Icon } from './utils';
@@ -72,7 +72,22 @@ export default function App() {
     setTimeout(() => setToast({ show: false, msg: '' }), 3000);
   };
 
-  const handleLogin = () => signInWithPopup(auth, new GoogleAuthProvider());
+  const handleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+
+    try {
+      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+    } catch (error) {
+      const isConfigError = ['auth/unauthorized-domain', 'auth/invalid-api-key', 'auth/api-key-not-valid'].includes(error?.code);
+      const message = isConfigError
+        ? 'Google sign-in is not configured for this domain. Check Firebase authorized domains and API key restrictions.'
+        : 'Google sign-in could not finish. Please close the extra tab and try again.';
+
+      console.error('Google sign-in failed:', error);
+      showToast(message);
+    }
+  };
 
   createEffect(() => { document.body.className = `theme-${theme()}`; localStorage.setItem('cinelog_theme', theme()); });
   createEffect(() => { view(); window.scrollTo(0, 0); });
