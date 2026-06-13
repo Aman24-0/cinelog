@@ -73,6 +73,8 @@ export function DetailsModal(props) {
       return props.id;
   });
 
+  const [overrideItem, setOverrideItem] = createSignal(null);
+
   const movie = createMemo(() => overrideItem() || (isPreview() ? previewData() : props.watchlist?.find(m => String(m.id) === String(baseId()))));
   
   const [details, setDetails] = createSignal({});
@@ -88,7 +90,6 @@ export function DetailsModal(props) {
   const [richPlatforms, setRichPlatforms] = createSignal([]);
   const [customServers, setCustomServers] = createSignal({});
   const [similarItems, setSimilarItems] = createSignal([]);
-  const [overrideItem, setOverrideItem] = createSignal(null);
   
   const [watchProgress, setWatchProgress] = createSignal(null);
   const [contentDuration, setContentDuration] = createSignal(0);
