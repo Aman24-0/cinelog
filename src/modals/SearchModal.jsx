@@ -6,24 +6,14 @@ import { PersonModal } from './PersonModal';
 
 export function SearchModal(props) {
   const [q, setQ] = createSignal(props.initialQuery || '');
-  const [recentSearches, setRecentSearches] = createSignal([]);
   const [results, setResults] = createSignal([]);
   const [searching, setSearching] = createSignal(false);
   const [personId, setPersonId] = createSignal(null);
 
   onMount(() => {
     document.body.style.overflow = 'hidden';
-    try { setRecentSearches(JSON.parse(localStorage.getItem('cinelog_recent_searches') || '[]')); } catch (e) {}
   });
   onCleanup(() => { document.body.style.overflow = ''; });
-
-  const saveRecentSearch = (query) => {
-    const trimmed = query.trim();
-    if (trimmed.length < 2) return;
-    const next = [trimmed, ...recentSearches().filter(x => x.toLowerCase() !== trimmed.toLowerCase())].slice(0, 10);
-    setRecentSearches(next);
-    localStorage.setItem('cinelog_recent_searches', JSON.stringify(next));
-  };
 
   const editDistance = (a, b) => {
     const dp = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
@@ -57,7 +47,6 @@ export function SearchModal(props) {
         const data = await res.json();
         // Include movies, tv AND persons
         setResults((data.results || []).filter(r => r.media_type === 'movie' || r.media_type === 'tv' || r.media_type === 'person'));
-        saveRecentSearch(query);
       } catch(e) {}
       setSearching(false);
     }, 500);
@@ -213,17 +202,6 @@ export function SearchModal(props) {
           </button>
         </div>
 
-
-        <Show when={q().length === 0 && recentSearches().length > 0}>
-          <div class="px-5 pb-4 flex flex-wrap gap-2 border-b border-white/5">
-            <For each={recentSearches()}>{(term) => (
-              <button onClick={() => setQ(term)} class="px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-widest border" style="background: var(--p-dim); border-color: var(--p); color: var(--p)">
-                {term}
-              </button>
-            )}</For>
-          </div>
-        </Show>
-
         {/* Results */}
         <div class="overflow-y-auto p-3 hide-scrollbar relative">
           <Show when={searching()}>
@@ -291,18 +269,19 @@ export function SearchModal(props) {
                       <span class="text-[10px] text-gray-500 font-bold">{(item.release_date || item.first_air_date || '').split('-')[0]}</span>
                     </div>
                   </div>
-                  <div class="self-center pr-2 shrink-0">
-                    <button
-                      disabled={isSaved}
-                      onClick={(e) => addMedia(item, e)}
-                      class={`w-10 h-10 rounded-full flex items-center justify-center transition-all shadow-lg active:scale-95 ${
-                        isSaved
-                          ? 'bg-[var(--p)] text-[#08090b]'
-                          : 'bg-[var(--p)]/10 text-[var(--p)] hover:bg-[var(--p)] hover:text-[#08090b]'
-                      }`}
-                    >
-                      <Icon name={isSaved ? "check" : "add"} class="text-xl font-black"/>
-                    </button>
+                  <div class="flex items-center">
+                    <Show when={isSaved} fallback={
+                      <button
+                        onClick={(e) => addMedia(item, e)}
+                        class="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-gray-400 hover:bg-[var(--p)] hover:text-[#08090b] transition-all active:scale-90"
+                      >
+                        <Icon name="add" class="text-xl"/>
+                      </button>
+                    }>
+                      <div class="w-10 h-10 rounded-full bg-[var(--p)]/10 flex items-center justify-center text-[var(--p)]">
+                        <Icon name="check_circle" class="text-xl" fill/>
+                      </div>
+                    </Show>
                   </div>
                 </div>
               );
@@ -310,16 +289,14 @@ export function SearchModal(props) {
           </div>
         </div>
       </div>
-
-      {/* PersonModal */}
       <Show when={personId()}>
         <PersonModal
-          personId={personId()}
-          uid={props.uid}
+          id={personId()}
           watchlist={props.watchlist}
-          showToast={props.showToast}
           onClose={() => setPersonId(null)}
           openPreview={handleOpenPreview}
+          showToast={props.showToast}
+          uid={props.uid}
           isGuest={props.isGuest}
           onLogin={props.onLogin}
         />

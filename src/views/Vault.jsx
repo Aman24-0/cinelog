@@ -12,14 +12,21 @@ export function Vault(props) {
 
   createEffect(() => setFilters(f => ({ ...f, status: props.activeStatus || 'all' })));
 
+  let prevViewMode = 'grid';
   createEffect(() => {
-    if (viewMode() !== 'timeline') return;
-    setFilters(f => ({
-      ...f,
-      status: 'Completed',
-      sort: f.sort === 'watch_asc' ? 'watch_asc' : 'watch_desc'
-    }));
-    props.onFilterChange && props.onFilterChange('Completed');
+    const mode = viewMode();
+    if (mode === 'timeline' && prevViewMode !== 'timeline') {
+      setFilters(f => ({
+        ...f,
+        status: 'Completed',
+        sort: f.sort === 'watch_asc' ? 'watch_asc' : 'watch_desc'
+      }));
+      props.onFilterChange && props.onFilterChange('Completed');
+    } else if (mode === 'grid' && prevViewMode === 'timeline') {
+      setFilters(defaultFilters);
+      props.onFilterChange && props.onFilterChange(props.activeStatus || 'all');
+    }
+    prevViewMode = mode;
   });
 
   const handleScroll = () => {

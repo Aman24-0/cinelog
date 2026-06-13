@@ -73,7 +73,7 @@ export function DetailsModal(props) {
       return props.id;
   });
 
-  const movie = createMemo(() => isPreview() ? previewData() : props.watchlist?.find(m => String(m.id) === String(baseId())));
+  const movie = createMemo(() => overrideItem() || (isPreview() ? previewData() : props.watchlist?.find(m => String(m.id) === String(baseId()))));
   
   const [details, setDetails] = createSignal({});
   const [isEdit, setIsEdit] = createSignal(false); 
@@ -87,11 +87,14 @@ export function DetailsModal(props) {
   
   const [richPlatforms, setRichPlatforms] = createSignal([]);
   const [customServers, setCustomServers] = createSignal({});
+  const [similarItems, setSimilarItems] = createSignal([]);
+  const [overrideItem, setOverrideItem] = createSignal(null);
   
   const [watchProgress, setWatchProgress] = createSignal(null);
   const [contentDuration, setContentDuration] = createSignal(0);
   const [playerSessionStart, setPlayerSessionStart] = createSignal(null);
   const [playerStartProgress, setPlayerStartProgress] = createSignal(0);
+  const [receivedRealProgress, setReceivedRealProgress] = createSignal(false);
   const [selectedSeason, setSelectedSeason] = createSignal(null);
   const [seasonEpisodes, setSeasonEpisodes] = createSignal({});
   const [seasonsLoading, setSeasonsLoading] = createSignal(false);
@@ -292,6 +295,7 @@ export function DetailsModal(props) {
             const dur = msg.data.duration || contentDuration() || inferDurationSeconds() || 0;
             if (cTime > 0) {
               if (dur > 0) setContentDuration(dur);
+              setReceivedRealProgress(true);
               setWatchProgress({ currentTime: cTime, duration: dur }); 
             }
         }
@@ -299,6 +303,7 @@ export function DetailsModal(props) {
             const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
             if (msg.currentTime > 0) {
               if (dur > 0) setContentDuration(dur);
+              setReceivedRealProgress(true);
               setWatchProgress({ currentTime: msg.currentTime, duration: dur });
             }
         }
@@ -306,6 +311,7 @@ export function DetailsModal(props) {
             const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
             if (msg.currentTime > 0) {
               if (dur > 0) setContentDuration(dur);
+              setReceivedRealProgress(true);
               setWatchProgress({ currentTime: msg.currentTime, duration: dur });
             }
         }
@@ -345,7 +351,10 @@ export function DetailsModal(props) {
   const hydrateSessionProgressFromElapsed = () => {
     const startedAt = playerSessionStart();
     if (!startedAt) return;
+    if (receivedRealProgress()) return; 
     const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    const MIN_SESSION_SECONDS = 60;
+    if (elapsed < MIN_SESSION_SECONDS) return; 
     const base = Math.max(0, Number(playerStartProgress()) || 0);
     const dur = contentDuration() || watchProgress()?.duration || inferDurationSeconds() || 0;
     const next = dur > 0 ? Math.min(base + elapsed, dur) : base + elapsed;
@@ -374,6 +383,7 @@ export function DetailsModal(props) {
                       setWatchProgress({ currentTime: 0, duration: inferred });
                   }
                   setPlayerStartProgress(movie().watchProgress?.currentTime || 0);
+                  setReceivedRealProgress(false);
                   setPlayerSessionStart(Date.now());
                   setShowPlayer(true);
               }, 200);
@@ -409,6 +419,26 @@ export function DetailsModal(props) {
   createEffect(() => {
     const m = movie();
     if (m?.media_type === 'tv' && !isPreview()) loadWatchedEpisodes();
+  });
+
+  createEffect(() => {
+    const m = movie();
+    if (!m?.id) { setSimilarItems([]); return; }
+    const mediaType = m.media_type === 'tv' ? 'tv' : 'movie';
+    fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/recommendations?api_key=${TMDB_KEY}&language=en-US&page=1`)
+      .then(r => r.json())
+      .then(d => {
+        let results = (d.results || []).filter(x => x.poster_path).slice(0, 12);
+        if (results.length === 0) {
+          fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/similar?api_key=${TMDB_KEY}&language=en-US&page=1`)
+            .then(r => r.json())
+            .then(d2 => setSimilarItems((d2.results || []).filter(x => x.poster_path).slice(0, 12)))
+            .catch(() => setSimilarItems([]));
+        } else {
+          setSimilarItems(results);
+        }
+      })
+      .catch(() => setSimilarItems([]));
   });
 
   onMount(() => { document.body.style.overflow = 'hidden'; window.addEventListener('message', handlePlayerMessages); }); 
@@ -733,6 +763,7 @@ export function DetailsModal(props) {
                             }
                             
                             setPlayerStartProgress(movie().watchProgress?.currentTime || 0);
+                            setReceivedRealProgress(false);
                             setPlayerSessionStart(Date.now());
                             setShowPlayer(true); 
                         }}
@@ -903,6 +934,28 @@ export function DetailsModal(props) {
                         <Show when={!isPreview() && movie().tag}><SafeInfoRow icon="label" label="Tag" value={<span class="text-[9px] font-black uppercase tracking-widest bg-white/10 text-white px-2 py-0.5 rounded border border-white/20">{movie().tag}</span>} /></Show>
                         <Show when={!isPreview() && movieFranchises()}><SafeInfoRow icon="folder_special" label="Lists" value={<span class="text-xs font-bold text-white">{movieFranchises()}</span>} /></Show>
                         <Show when={!isPreview() && movie().notes && typeof movie().notes === 'string'}><div class="border-t border-white/5 pt-3 mt-3"><p class="text-[10px] uppercase font-black text-gray-500 tracking-widest mb-1 flex items-center gap-1"><Icon name="edit_note" class="text-[14px]"/> Notes</p><p class="text-sm text-gray-300 italic">"{movie().notes}"</p></div></Show>
+
+                        <Show when={similarItems().length > 0}>
+                          <div class="mb-8 mt-6">
+                            <h3 class="text-[10px] font-bold uppercase text-gray-500 tracking-widest mb-3 px-1 flex items-center gap-2">
+                              <Icon name="auto_awesome" class="text-[12px]" style="color: var(--p)"/> More Like This
+                            </h3>
+                            <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
+                              <For each={similarItems()}>{(item) => (
+                                <div 
+                                  onClick={() => {
+                                    setOverrideItem({ ...item, media_type: item.media_type || (movie().media_type === 'tv' ? 'tv' : 'movie') });
+                                    document.querySelector('.overflow-y-auto.hide-scrollbar.w-full')?.scrollTo({ top: 0, behavior: 'smooth' });
+                                  }}
+                                  class="min-w-[110px] w-[110px] shrink-0 cursor-pointer active:scale-95 transition-transform"
+                                >
+                                  <img src={`https://image.tmdb.org/t/p/w200${item.poster_path}`} class="w-full h-[160px] rounded-xl object-cover bg-[#171921] mb-2 border border-white/5" />
+                                  <p class="text-[10px] font-bold text-gray-200 line-clamp-2 leading-tight">{item.title || item.name}</p>
+                                </div>
+                              )}</For>
+                            </div>
+                          </div>
+                        </Show>
 
                         <Show when={!isPreview() && movie().media_type === 'tv' && movie().seasonDates && Object.keys(movie().seasonDates).some(k => movie().seasonDates[k].start || movie().seasonDates[k].end)}>
                             <div class="border-t border-white/5 pt-4 mt-2">

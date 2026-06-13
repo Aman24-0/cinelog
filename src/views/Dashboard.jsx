@@ -1,7 +1,7 @@
 import { createMemo, For, Show } from 'solid-js';
 import { Icon } from '../utils';
 import { MovieCard } from '../components/MovieCard';
-import { AIRecommend } from '../components/AIRecommend';
+
 
 export function Dashboard(props) {
 
@@ -15,7 +15,8 @@ export function Dashboard(props) {
   const continueWatchingList = createMemo(() => {
     return props.watchlist()
       .filter(m => {
-        if (!m.watchProgress || m.watchProgress.currentTime <= 0 || m.status === 'Completed') return false;
+        if (!m.watchProgress || m.watchProgress.currentTime <= 0) return false;
+        if (m.status !== 'Watching') return false;
         if (m.media_type !== 'tv') return true;
         const wpSeason = parseInt(m.watchProgress.season || 1);
         const wpEpisode = parseInt(m.watchProgress.episode || 1);
@@ -220,12 +221,7 @@ export function Dashboard(props) {
         </div>
       </div>
 
-      {/* ── AI RECOMMENDATIONS ── */}
-      <Show when={!props.isGuest}>
-        <div class="mt-2">
-          <AIRecommend watchlist={props.watchlist} onSearch={props.onSearch} />
-        </div>
-      </Show>
+
 
     </div>
   );

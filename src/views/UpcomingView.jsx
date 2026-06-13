@@ -24,9 +24,9 @@ function UpcomingDetailsModal(props) {
   const runtimeVal = () => details().runtime || details().episode_run_time?.[0] || 0;
 
   return (
-      <div class="fixed inset-0 bg-black/95 flex items-center justify-center p-4 z-[999999] animate-fade-in" onClick={props.onClose}>
+      <div class="fixed inset-0 bg-black/95 flex items-center justify-center p-4 z-[999999] isolate animate-fade-in" onClick={props.onClose}>
           <div class="w-full max-w-xl bg-[#0c0e14] rounded-3xl overflow-hidden border border-white/10 relative max-h-[90vh] shadow-2xl animate-pop-in flex flex-col" onClick={e=>e.stopPropagation()}>
-              <button onClick={props.onClose} class="absolute top-4 right-4 z-[100] bg-black/50 backdrop-blur-md border border-white/10 p-2.5 rounded-full hover:bg-black/80 active:scale-95 transition-all"><Icon name="close" class="text-sm text-white"/></button>
+              <button onClick={props.onClose} class="absolute top-20 md:top-4 right-4 z-[1000000] bg-black/50 backdrop-blur-md border border-white/10 p-2.5 rounded-full hover:bg-black/80 active:scale-95 transition-all"><Icon name="close" class="text-sm text-white"/></button>
               <div class="overflow-y-auto hide-scrollbar w-full">
                   <div class="relative h-48 md:h-64 bg-black">
                       <Show when={!playTrailer()} fallback={<iframe class="w-full h-full absolute inset-0 z-10" src={`https://www.youtube.com/embed/${trailerKey()}?autoplay=1&rel=0`} frameborder="0" allowfullscreen></iframe>}>
