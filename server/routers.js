@@ -139,4 +139,5 @@ export const appRouter = router({
   health,
 });
 
-export type AppRouter = typeof appRouter;
+// tRPC types frontend ke liye sirf compile-time par chahiye hote hain
+export {};
