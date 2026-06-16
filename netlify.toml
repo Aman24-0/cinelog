@@ -14,8 +14,8 @@
   to = "https://api.themoviedb.org/3/:splat"
   status = 200
   force = true
-  
-[[headers]]
+
+  [[headers]]
   for = "/*"
   [headers.values]
     Cross-Origin-Opener-Policy = "same-origin-allow-popups"
