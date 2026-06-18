@@ -20,7 +20,8 @@
     "solid-js": "^1.8.17",
     "superjson": "^1.13.1",
     "video.js": "^8.23.7",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "webtorrent": "^2.5.0",
   },
   "devDependencies": {
     "autoprefixer": "^10.4.19",
