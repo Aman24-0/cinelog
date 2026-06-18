@@ -1,6 +1,4 @@
-import WebTorrent from 'webtorrent';
-
-const client = new WebTorrent();
+import torrentStream from 'torrent-stream';
 
 export const streamTorrent = (req, res) => {
   const magnet = req.query.magnet;
@@ -9,10 +7,15 @@ export const streamTorrent = (req, res) => {
   }
 
   try {
-    let torrent = client.get(magnet);
+    console.log('🔄 Starting Torrent Stream Engine (torrent-stream)...');
+    
+    // Engine start karte hain
+    const engine = torrentStream(magnet);
 
-    const handleTorrent = (t) => {
-      const file = t.files.reduce((a, b) => (a.length > b.length ? a : b));
+    engine.on('ready', () => {
+      // Sabse badi file dhoondho (jo video file hogi)
+      const file = engine.files.reduce((a, b) => (a.length > b.length ? a : b));
+      console.log(`✅ Ready to stream: ${file.name}`);
 
       const range = req.headers.range;
       if (!range) {
@@ -24,6 +27,7 @@ export const streamTorrent = (req, res) => {
         return;
       }
 
+      // Video Seeking (aage-peeche karne) ke liye Range Header support
       const positions = range.replace(/bytes=/, '').split('-');
       const start = parseInt(positions[0], 10);
       const end = positions[1] ? parseInt(positions[1], 10) : file.length - 1;
@@ -36,15 +40,13 @@ export const streamTorrent = (req, res) => {
         'Content-Type': 'video/mp4',
       });
 
+      // Video stream ko direct player tak pipe kar do
       file.createReadStream({ start, end }).pipe(res);
-    };
+    });
 
-    if (torrent) {
-      handleTorrent(torrent);
-    } else {
-      console.log('🔄 Starting Torrent Stream Engine...');
-      client.add(magnet, handleTorrent);
-    }
+    engine.on('error', (err) => {
+      console.error('Engine error:', err);
+    });
 
   } catch (err) {
     console.error('Streaming error:', err);
