@@ -55,12 +55,14 @@ const searchMovies = publicProcedure
 const scrapeVideoSource = publicProcedure
   .input(z.object({
     movieTitle: z.string().min(1),
+    year: z.string().optional(), // Naya field add kiya
   }))
   .mutation(async ({ input }) => {
     try {
-      console.log(`\n📡 Scraping video list for: ${input.movieTitle}`);
+      console.log(`\n📡 Scraping video list for: ${input.movieTitle} (${input.year || 'N/A'})`);
       
-      const streams = await findVideoSource(input.movieTitle);
+      // Title aur Year dono ko scraper function me bheja
+      const streams = await findVideoSource(input.movieTitle, input.year);
 
       if (streams && streams.length > 0) {
         return {
