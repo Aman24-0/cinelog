@@ -39,12 +39,14 @@ export const MovieStreamModal = (props) => {
     }, 500);
   };
 
-  const handleWatchMovie = async (movie) => {
+ const handleWatchMovie = async (movie) => {
     setLoadingMovieId(movie.id);
     setSearchError(null);
     try {
+      // Title ke sath Year bhi bhej rahe hain exact match ke liye
       const result = await trpc.movies.scrapeVideoSource.mutate({
         movieTitle: movie.title,
+        year: String(movie.year || '')
       });
 
       if (result.success && result.sources && result.sources.length > 0) {
