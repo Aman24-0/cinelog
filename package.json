@@ -10,6 +10,7 @@
     "server": "node server/index.js"
   },
   "dependencies": {
+    "webtorrent": "^2.5.0",
     "@google/generative-ai": "^0.24.0",
     "@trpc/client": "^10.45.0",
     "@trpc/server": "^10.45.0",
@@ -20,8 +21,7 @@
     "solid-js": "^1.8.17",
     "superjson": "^1.13.1",
     "video.js": "^8.23.7",
-    "zod": "^3.22.4",
-    "webtorrent": "^2.5.0",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.19",
