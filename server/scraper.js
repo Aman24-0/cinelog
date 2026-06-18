@@ -1,54 +1,61 @@
 // server/scraper.js
-const PROWLARR_URL = process.env.PROWLARR_URL;
-const PROWLARR_API_KEY = process.env.PROWLARR_API_KEY;
 
 export async function findVideoSource(movieTitle) {
-  console.log(`\n🎬 Prowlarr Search Triggered For: "${movieTitle}"`);
-  
-  if (!PROWLARR_URL || !PROWLARR_API_KEY) {
-    console.log("❌ Render par PROWLARR_URL ya PROWLARR_API_KEY set nahi hai!");
-    return null;
+  console.log(`\n🎬 Prowlarr List Search For: "${movieTitle}"`);
+
+  // URL ke aage se extra '/' hatane ka safe tareeqa
+  const baseUrl = (process.env.PROWLARR_URL || '').replace(/\/$/, '');
+  const apiKey = process.env.PROWLARR_API_KEY;
+
+  if (!baseUrl || !apiKey) {
+    throw new Error("Render par PROWLARR_URL ya PROWLARR_API_KEY set nahi hai!");
   }
 
   try {
-    // API Key ko URL se hata diya gaya hai taaki Prowlarr block na kare
-    const searchUrl = `${PROWLARR_URL}/api/v1/search?query=${encodeURIComponent(movieTitle)}&categories=2000,2040`;
-    
-    console.log(`📡 Sending request to: ${searchUrl}`);
+    const searchUrl = `${baseUrl}/api/v1/search?query=${encodeURIComponent(movieTitle)}&type=search&categories=2000,2040`;
+    console.log(`📡 Fetching from: ${searchUrl}`);
 
     const response = await fetch(searchUrl, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
-        'X-Api-Key': PROWLARR_API_KEY // API Key ko safely secure Headers mein bhej rahe hain
+        'X-Api-Key': apiKey
       }
     });
 
     if (!response.ok) {
-      console.log(`❌ Prowlarr Server responded with status: ${response.status}`);
-      throw new Error('Prowlarr authentication or network failed');
+      throw new Error(`Prowlarr Connection Failed (Status: ${response.status})`);
     }
-    
+
     const results = await response.json();
 
-    if (results && results.length > 0) {
-      // Highest seeders wale torrent ko choose karne ke liye sort
-      const sortedResults = results.sort((a, b) => (b.seeders || 0) - (a.seeders || 0));
-      
-      for (const item of sortedResults) {
-        const link = item.magnetUrl || item.downloadUrl;
-        if (link) {
-          console.log(`✅ Real Link Found: ${item.title} (Seeders: ${item.seeders})`);
-          return link; 
-        }
-      }
+    if (!results || results.length === 0) {
+      return []; // Agar koi movie nahi mili toh empty list return karega
     }
 
-    console.log(`❌ No stream found on Prowlarr for "${movieTitle}"`);
-    return null;
+    // Top 20 results (Seeders ke hisaab se sorted)
+    const sorted = results.sort((a, b) => (b.seeders || 0) - (a.seeders || 0)).slice(0, 20);
+
+    const streams = sorted.map(item => {
+      // File Size ko Bytes se GB mein convert karna
+      let sizeStr = "Unknown Size";
+      if (item.size) {
+        sizeStr = (item.size / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+      }
+      return {
+        title: item.title || 'Unknown Title',
+        link: item.magnetUrl || item.downloadUrl || null,
+        seeders: item.seeders || 0,
+        size: sizeStr,
+        indexer: item.indexer || 'Torrent'
+      };
+    }).filter(item => item.link); // Sirf wahi torrent rakho jisme real link ho
+
+    return streams;
+
   } catch (error) {
     console.error(`❌ Scraper Error:`, error.message);
-    return null;
+    throw error;
   }
 }
 
