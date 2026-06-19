@@ -18,19 +18,53 @@ export async function findVideoSource(movieTitle, year) {
     const url = new URL(`${baseUrl}/api/v1/search`);
     url.searchParams.append('query', exactQuery);
     url.searchParams.append('type', 'search');
+    // Removed categories parameter to avoid Prowlarr validation errors with comma-separated values.
+    // Prowlarr will search all enabled indexers/categories by default.
     
-    console.log(`📡 Fetching from Prowlarr: ${url.toString()}`);
+    // Retry logic for Prowlarr cold starts on Render
+    let attempts = 0;
+    const maxAttempts = 3;
+    let response;
 
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'X-Api-Key': apiKey
+    while (attempts < maxAttempts) {
+      try {
+        console.log(`📡 Fetching from Prowlarr (Attempt ${attempts + 1}/${maxAttempts}): ${url.toString()}`);
+        
+        // Use AbortController for timeout handling (15 seconds per attempt)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+        response = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'X-Api-Key': apiKey
+          },
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+
+        if (response.status === 502 || response.status === 503 || response.status === 504) {
+          throw new Error(`Prowlarr returned ${response.status} (Gateway Error)`);
+        }
+
+        if (!response.ok) {
+          throw new Error(`Prowlarr API returned HTTP Status ${response.status}`);
+        }
+
+        break; // Success, exit loop
+      } catch (error) {
+        attempts++;
+        console.warn(`⚠️ Attempt ${attempts} failed: ${error.message}`);
+        
+        if (attempts >= maxAttempts) {
+          throw new Error(`Prowlarr API failed after ${maxAttempts} attempts. Last error: ${error.message}`);
+        }
+        
+        // Wait 2 seconds before retrying (helps with cold starts)
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Prowlarr API returned HTTP Status ${response.status}`);
     }
 
     const results = await response.json();
