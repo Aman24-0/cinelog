@@ -21,8 +21,8 @@ app.use(cors({
 // Parse JSON bodies
 app.use(express.json());
 
-// tRPC Endpoint
-app.use('/trpc', createExpressMiddleware({
+// ✅ FIXED: Changed '/trpc' to '/api/trpc' to match frontend
+app.use('/api/trpc', createExpressMiddleware({
   router: appRouter,
   createContext: ({ req, res }) => ({ req, res }),
 }));
@@ -37,6 +37,6 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 tRPC endpoint: http://localhost:${PORT}/trpc`);
+  console.log(`📡 tRPC endpoint: http://localhost:${PORT}/api/trpc`);
   console.log(`🎬 Stream endpoint: http://localhost:${PORT}/api/stream`);
 });
