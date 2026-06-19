@@ -18,6 +18,8 @@ export async function findVideoSource(movieTitle, year) {
     const url = new URL(`${baseUrl}/api/v1/search`);
     url.searchParams.append('query', exactQuery);
     url.searchParams.append('type', 'search');
+    // Removed categories parameter to avoid Prowlarr validation errors with comma-separated values.
+    // Prowlarr will search all enabled indexers/categories by default.
     
     console.log(`📡 Fetching from Prowlarr: ${url.toString()}`);
 
