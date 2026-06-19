@@ -4,7 +4,7 @@ import { router, publicProcedure } from './trpc.js';
 const TMDB_API_KEY = process.env.TMDB_API_KEY || 'your_tmdb_api_key_here';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
-// In-memory cache to protect against Torrentio rate limits (5 min TTL)
+// In-memory cache to protect against rate limits (5 min TTL)
 const torrentCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;
 
@@ -38,7 +38,7 @@ const searchMovies = publicProcedure
   });
 
 /**
- * ✅ FIXED: Uses FREE Torrentio API with proper error handling & retries
+ * ✅ FIXED: Uses CORS Proxy to bypass Render IP blocking on Torrentio
  */
 const scrapeVideoSource = publicProcedure
   .input(z.object({
@@ -68,25 +68,35 @@ const scrapeVideoSource = publicProcedure
         return cached.data;
       }
 
-      // 3. Fetch streams from Torrentio WITH RETRY LOGIC
-      console.log(`📡 Fetching streams from Torrentio for: ${imdbId}`);
-      let lastError;
-      
-      for (let attempt = 1; attempt <= 3; attempt++) {
-        try {
-          const response = await fetch(
-            `https://torrentio.strem.fun/stream/${input.type}/${imdbId}.json`,
-            { signal: AbortSignal.timeout(10000) } // 10s timeout
-          );
+      // 3. Fetch streams via CORS Proxy to avoid IP blocks
+      const targetUrl = `https://torrentio.strem.fun/stream/${input.type}/${imdbId}.json`;
+      // Using allorigins.win as primary proxy, corsproxy.io as fallback
+      const proxyUrls = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+        `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
+      ];
 
-          // ✅ FIXED: Don't throw on !response.ok immediately. Parse JSON first.
-          const data = await response.json();
+      let lastError;
+      for (let attempt = 1; attempt <= proxyUrls.length; attempt++) {
+        try {
+          console.log(`📡 Attempt ${attempt}: Fetching via proxy for ${imdbId}`);
+          const response = await fetch(proxyUrls[attempt - 1], {
+            signal: AbortSignal.timeout(15000) // 15s timeout
+          });
+
+          const text = await response.text();
           
-          // Handle Torrentio's empty result format
+          // Check if response is actually JSON (not HTML block page)
+          if (text.trim().startsWith('<')) {
+            throw new Error(`Proxy returned HTML instead of JSON (Attempt ${attempt})`);
+          }
+
+          const data = JSON.parse(text);
+          
+          // Handle empty results gracefully
           if (!data.streams || data.streams.length === 0) {
             console.log(`⚠️ No streams found on Torrentio for ${imdbId}`);
-            return { success: true, sources: [], source: 'torrentio' };
-          }
+            return { success: true, sources: [], source: 'torrentio' };          }
 
           // Transform streams
           const streams = data.streams.map(stream => ({
@@ -96,6 +106,7 @@ const scrapeVideoSource = publicProcedure
             size: stream.title.match(/\s*([\d.]+\s*[A-Z]+)/)?.[1] || 'Unknown',
             indexer: 'Torrentio'
           })).filter(s => s.magnet && s.magnet.startsWith('magnet:'));
+
           const result = {
             success: true,
             sources: streams,
@@ -105,18 +116,16 @@ const scrapeVideoSource = publicProcedure
           // Store in cache
           torrentCache.set(cacheKey, { data: result, timestamp: Date.now() });
           
-          console.log(`✅ Found ${streams.length} streams via Torrentio`);
+          console.log(`✅ Found ${streams.length} streams via Torrentio (Proxy ${attempt})`);
           return result;
 
         } catch (err) {
           lastError = err;
-          console.warn(`⚠️ Torrentio attempt ${attempt} failed: ${err.message}`);
-          if (attempt < 3) await new Promise(r => setTimeout(r, 1500)); // Wait before retry
+          console.warn(`⚠️ Proxy attempt ${attempt} failed: ${err.message}`);
         }
       }
 
-      // All retries failed
-      throw new Error(`Torrentio API failed after 3 attempts: ${lastError.message}`);
+      throw new Error(`All proxies failed: ${lastError.message}`);
 
     } catch (error) {
       console.error('Scrape failed:', error);
