@@ -4,9 +4,9 @@ import { router, publicProcedure } from './trpc.js';
 const TMDB_API_KEY = process.env.TMDB_API_KEY || 'your_tmdb_api_key_here';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
-// Simple in-memory cache to protect against Torrentio rate limits
+// In-memory cache to protect against Torrentio rate limits (5 min TTL)
 const torrentCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL = 5 * 60 * 1000;
 
 /**
  * Search movies using TMDB API
@@ -69,7 +69,7 @@ const scrapeVideoSource = publicProcedure
       
       // Transform Torrentio format to match existing VideoPlayer
       const streams = (data.streams || []).map(stream => ({
-        title: stream.title.replace(/\s*\d+\s*⬇️/g, '').trim(),
+        title: stream.title.replace(/\s*\d+\s*️/g, '').trim(),
         magnet: stream.url, // Torrentio returns direct magnet links
         seeders: parseInt(stream.title.match(/👤\s*(\d+)/)?.[1] || '0'),
         size: stream.title.match(/\s*([\d.]+\s*[A-Z]+)/)?.[1] || 'Unknown',
