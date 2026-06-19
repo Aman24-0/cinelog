@@ -1,7 +1,8 @@
 import { createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js';
 import { doc, setDoc, serverTimestamp, collection, getDocs, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, cleanPlatform, TMDB_KEY } from '../utils';
+import { Icon, cleanPlatform } from '../utils';
+import { trpc } from '../lib/trpc';
 import { PersonModal } from './PersonModal';
 
 export function SearchModal(props) {
@@ -43,8 +44,7 @@ export function SearchModal(props) {
     setSearching(true);
     const t = setTimeout(async () => {
       try {
-        const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${TMDB_KEY}&query=${encodeURIComponent(query)}`);
-        const data = await res.json();
+        const data = await trpc.tmdb.search.query({ mediaType: 'multi', query });
         // Include movies, tv AND persons
         setResults((data.results || []).filter(r => r.media_type === 'movie' || r.media_type === 'tv' || r.media_type === 'person'));
       } catch(e) {}
@@ -83,8 +83,7 @@ export function SearchModal(props) {
     }
     props.showToast("Adding to Vault...");
     try {
-      const res = await fetch(`https://api.themoviedb.org/3/${m.media_type}/${m.id}?api_key=${TMDB_KEY}&append_to_response=watch/providers,credits`);
-      const data = await res.json();
+      const data = await trpc.tmdb.details.query({ mediaType: m.media_type, id: Number(m.id), appendToResponse: 'watch/providers,credits' });
       const castNames = data.credits?.cast?.slice(0, 5).map(c => c.name) || [];
       const director = data.credits?.crew?.find(c => c.job === 'Director')?.name || '';
       const castList = [...castNames, director].filter(Boolean);
@@ -135,8 +134,7 @@ export function SearchModal(props) {
           await setDoc(doc(db, 'users', props.uid, 'franchises', folderId), { universeKey: universe.key, name: universe.name }, { merge: true });
         }
 
-        const collRes = await fetch(`https://api.themoviedb.org/3/collection/${data.belongs_to_collection.id}?api_key=${TMDB_KEY}`);
-        const coll = await collRes.json();
+        const coll = await trpc.tmdb.collection.query({ id: Number(data.belongs_to_collection.id) });
         const ordered = (coll.parts || []).slice().sort((a, b) => (new Date(a.release_date || 0).getTime() || 0) - (new Date(b.release_date || 0).getTime() || 0));
         const watchSnap = await getDocs(collection(db, 'users', props.uid, 'watchlist'));
         const existing = new Set(watchSnap.docs.map(d => String(d.id)));

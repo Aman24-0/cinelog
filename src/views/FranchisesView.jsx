@@ -1,7 +1,8 @@
 import { createSignal, createMemo, For, Show, onMount, onCleanup } from 'solid-js';
 import { doc, updateDoc, deleteDoc, writeBatch, collection, addDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, TMDB_KEY } from '../utils';
+import { Icon } from '../utils';
+import { trpc } from '../lib/trpc';
 
 function AddToFolderModal(props) {
   const [search, setSearch] = createSignal('');
@@ -272,8 +273,7 @@ export function FranchisesView(props) {
     setBulkAdding(true);
     try {
       const watchSet = new Set(props.watchlist().map(m => String(m.id)));
-      const res = await fetch(`https://api.themoviedb.org/3/collection/${folder.tmdbCollectionId}?api_key=${TMDB_KEY}`);
-      const coll = await res.json();
+      const coll = await trpc.tmdb.collection.query({ id: Number(folder.tmdbCollectionId) });
       const ordered = (coll.parts || []).slice().sort((a, b) => (new Date(a.release_date || 0).getTime() || 0) - (new Date(b.release_date || 0).getTime() || 0));
       let added = 0;
       for (let i = 0; i < ordered.length; i++) {

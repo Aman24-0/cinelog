@@ -1,8 +1,32 @@
 import { z } from 'zod';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { router, publicProcedure } from './trpc.js';
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY || 'your_tmdb_api_key_here';
+const TMDB_API_KEY = process.env.TMDB_API_KEY;
+const OMDB_API_KEY = process.env.OMDB_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const OMDB_BASE_URL = 'https://www.omdbapi.com/';
+
+const requireEnv = (value, name) => {
+  if (!value) throw new Error(`${name} is not configured on the server`);
+  return value;
+};
+
+const tmdbFetch = async (path, params = {}) => {
+  const key = requireEnv(TMDB_API_KEY, 'TMDB_API_KEY');
+  const safePath = path.startsWith('/') ? path : `/${path}`;
+  const url = new URL(`${TMDB_BASE_URL}${safePath}`);
+  url.searchParams.set('api_key', key);
+  Object.entries(params || {}).forEach(([paramKey, value]) => {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(paramKey, String(value));
+  });
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`TMDB API error: ${response.status} ${response.statusText}`);
+  return response.json();
+};
+
+const tmdbMediaTypeSchema = z.enum(['movie', 'tv']);
 
 // In-memory cache to protect against rate limits (5 min TTL)
 const torrentCache = new Map();
@@ -15,12 +39,7 @@ const searchMovies = publicProcedure
   .input(z.object({ query: z.string().min(1) }))
   .query(async ({ input }) => {
     try {
-      const response = await fetch(
-        `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(input.query)}&page=1`
-      );
-      if (!response.ok) throw new Error(`TMDB API error: ${response.statusText}`);
-      
-      const data = await response.json();
+      const data = await tmdbFetch('/search/movie', { query: input.query, page: 1 });
       const movies = (data.results || []).slice(0, 10).map(movie => ({
         id: movie.id,
         title: movie.title,
@@ -37,6 +56,80 @@ const searchMovies = publicProcedure
     }
   });
 
+
+const searchTmdb = publicProcedure
+  .input(z.object({ query: z.string().min(1), mediaType: z.enum(['multi', 'movie', 'tv', 'person']).default('multi'), page: z.number().int().min(1).max(500).default(1) }))
+  .query(({ input }) => tmdbFetch(`/search/${input.mediaType}`, { query: input.query, page: input.page }));
+
+const tmdbDetails = publicProcedure
+  .input(z.object({ mediaType: z.enum(['movie', 'tv', 'person']), id: z.number().int().positive(), appendToResponse: z.string().optional() }))
+  .query(({ input }) => tmdbFetch(`/${input.mediaType}/${input.id}`, { append_to_response: input.appendToResponse }));
+
+const tmdbCollection = publicProcedure
+  .input(z.object({ id: z.number().int().positive() }))
+  .query(({ input }) => tmdbFetch(`/collection/${input.id}`));
+
+const tmdbWatchProviders = publicProcedure
+  .input(z.object({ mediaType: tmdbMediaTypeSchema, id: z.number().int().positive() }))
+  .query(({ input }) => tmdbFetch(`/${input.mediaType}/${input.id}/watch/providers`));
+
+const tmdbSeasonDetails = publicProcedure
+  .input(z.object({ tvId: z.number().int().positive(), seasonNumber: z.number().int().min(0) }))
+  .query(({ input }) => tmdbFetch(`/tv/${input.tvId}/season/${input.seasonNumber}`));
+
+const tmdbRecommendations = publicProcedure
+  .input(z.object({ mediaType: tmdbMediaTypeSchema, id: z.number().int().positive(), page: z.number().int().min(1).max(500).default(1), fallbackSimilar: z.boolean().default(true) }))
+  .query(async ({ input }) => {
+    const recommendations = await tmdbFetch(`/${input.mediaType}/${input.id}/recommendations`, { language: 'en-US', page: input.page });
+    if (!input.fallbackSimilar || (recommendations.results || []).length > 0) return recommendations;
+    return tmdbFetch(`/${input.mediaType}/${input.id}/similar`, { language: 'en-US', page: input.page });
+  });
+
+const tmdbUpcomingDiscovery = publicProcedure
+  .input(z.object({ startDate: z.string(), endDate: z.string(), region: z.enum(['Indian', 'International']).default('Indian'), language: z.string().default('all') }))
+  .query(async ({ input }) => {
+    const movieParams = { 'primary_release_date.gte': input.startDate, 'primary_release_date.lte': input.endDate, sort_by: 'popularity.desc' };
+    const tvParams = { 'air_date.gte': input.startDate, 'air_date.lte': input.endDate, sort_by: 'popularity.desc', without_genres: '10764,10767' };
+    if (input.region === 'Indian') {
+      movieParams.with_origin_country = 'IN';
+      tvParams.with_origin_country = 'IN';
+      if (input.language !== 'all') {
+        movieParams.with_original_language = input.language;
+        tvParams.with_original_language = input.language;
+      }
+    }
+    const [m1, m2, t1, t2] = await Promise.all([
+      tmdbFetch('/discover/movie', { ...movieParams, page: 1 }),
+      tmdbFetch('/discover/movie', { ...movieParams, page: 2 }),
+      tmdbFetch('/discover/tv', { ...tvParams, page: 1 }),
+      tmdbFetch('/discover/tv', { ...tvParams, page: 2 }),
+    ]);
+    const tvDetails = await Promise.all([...(t1.results || []), ...(t2.results || [])].slice(0, 25).map(t => tmdbFetch(`/tv/${t.id}`).catch(() => null)));
+    return { movies: [...(m1.results || []), ...(m2.results || [])], tvDetails: tvDetails.filter(Boolean) };
+  });
+
+const omdbRatings = publicProcedure
+  .input(z.object({ title: z.string().min(1) }))
+  .query(async ({ input }) => {
+    const key = requireEnv(OMDB_API_KEY, 'OMDB_API_KEY');
+    const url = new URL(OMDB_BASE_URL);
+    url.searchParams.set('t', input.title);
+    url.searchParams.set('apikey', key);
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`OMDb API error: ${response.status} ${response.statusText}`);
+    return response.json();
+  });
+
+const aiRecommendations = publicProcedure
+  .input(z.object({ titles: z.array(z.string()).min(1).max(25), favoriteGenres: z.array(z.string()).max(8).default([]) }))
+  .mutation(async ({ input }) => {
+    const genAI = new GoogleGenerativeAI(requireEnv(GEMINI_API_KEY, 'GEMINI_API_KEY'));
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const prompt = `User top rated/watched titles:\n${input.titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\nFavorite genres: ${input.favoriteGenres.join(', ') || 'unknown'}\nRecommend 10 movies or shows the user has not seen. Return JSON array only: [{"title":"...","reason":"short reason"}].`;
+    const result = await model.generateContent(prompt);
+    return { text: result.response.text() };
+  });
+
 /**
  * ✅ FIXED: Uses CORS Proxy to bypass Render IP blocking on Torrentio
  */
@@ -48,12 +141,7 @@ const scrapeVideoSource = publicProcedure
   .mutation(async ({ input }) => {
     try {
       // 1. Get IMDB ID from TMDB      console.log(`🔍 Fetching IMDB ID for TMDB ID: ${input.tmdbId}`);
-      const detailsRes = await fetch(
-        `${TMDB_BASE_URL}/movie/${input.tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`
-      );
-      
-      if (!detailsRes.ok) throw new Error('Failed to fetch movie details from TMDB');
-      const details = await detailsRes.json();
+      const details = await tmdbFetch(`/movie/${input.tmdbId}`, { append_to_response: 'external_ids' });
       
       const imdbId = details.external_ids?.imdb_id;
       if (!imdbId) throw new Error('IMDB ID not found in TMDB external IDs');
@@ -137,6 +225,21 @@ export const appRouter = router({
   movies: router({
     search: searchMovies,
     scrapeVideoSource,
+  }),
+  tmdb: router({
+    search: searchTmdb,
+    details: tmdbDetails,
+    collection: tmdbCollection,
+    watchProviders: tmdbWatchProviders,
+    seasonDetails: tmdbSeasonDetails,
+    recommendations: tmdbRecommendations,
+    upcomingDiscovery: tmdbUpcomingDiscovery,
+  }),
+  omdb: router({
+    ratings: omdbRatings,
+  }),
+  ai: router({
+    recommendations: aiRecommendations,
   }),
 });
 

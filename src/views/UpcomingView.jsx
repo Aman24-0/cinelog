@@ -1,7 +1,8 @@
 import { createSignal, createEffect, For, Show, onMount, onCleanup } from 'solid-js';
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, cleanPlatform, TMDB_KEY, formatRuntime, SafeInfoRow } from '../utils';
+import { Icon, cleanPlatform, formatRuntime, SafeInfoRow } from '../utils';
+import { trpc } from '../lib/trpc';
 
 function UpcomingDetailsModal(props) {
   const [details, setDetails] = createSignal(props.movie);
@@ -11,7 +12,7 @@ function UpcomingDetailsModal(props) {
   onMount(() => { document.body.style.overflow = 'hidden'; }); onCleanup(() => { document.body.style.overflow = ''; });
   createEffect(() => {
       const mediaType = props.movie.media_type || 'movie';
-      fetch(`https://api.themoviedb.org/3/${mediaType}/${props.movie.id}?api_key=${TMDB_KEY}&append_to_response=videos,credits,watch/providers`).then(r=>r.json()).then(d=>{
+      trpc.tmdb.details.query({ mediaType, id: Number(props.movie.id), appendToResponse: 'videos,credits,watch/providers' }).then(d=>{
           setDetails(d); const vids = d.videos ? d.videos.results : null;
           if(vids){ let t = vids.find(x=>x.site==='YouTube' && (x.type==='Trailer' || x.type==='Teaser')) || vids.find(x=>x.site==='YouTube'); if(t) setTrailerKey(t.key); }
           const inProviders = d['watch/providers']?.results?.IN; let foundProviders = [];
@@ -64,7 +65,7 @@ function UpcomingDetailsModal(props) {
 
 export function UpcomingView(props) {
   const [activeTab, setActiveTab] = createSignal('Indian');
-  const [mediaType, setMediaType] = createSignal('movie'); 
+  const [mediaType, setMediaType] = createSignal('movie');
   const [lang, setLang] = createSignal('all');
   const [selectedDate, setSelectedDate] = createSignal(new Date().toISOString().split('T')[0]);
   const [movies, setMovies] = createSignal([]);
@@ -75,28 +76,12 @@ export function UpcomingView(props) {
     setLoading(true);
     const dateObj = new Date(selectedDate());
     const startDate = dateObj.toISOString().split('T')[0];
-    dateObj.setDate(dateObj.getDate() + 30); 
+    dateObj.setDate(dateObj.getDate() + 30);
     const endDate = dateObj.toISOString().split('T')[0];
-    
-    let mUrl = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&primary_release_date.gte=${startDate}&primary_release_date.lte=${endDate}&sort_by=popularity.desc`;
-    let tUrl = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_KEY}&air_date.gte=${startDate}&air_date.lte=${endDate}&sort_by=popularity.desc&without_genres=10764,10767`;
-    
-    if (activeTab() === 'Indian') {
-        mUrl += '&with_origin_country=IN'; tUrl += '&with_origin_country=IN';
-        if (lang() !== 'all') { mUrl += `&with_original_language=${lang()}`; tUrl += `&with_original_language=${lang()}`; }
-    }
-    
-    Promise.all([
-        fetch(mUrl + '&page=1').then(r=>r.json()), fetch(mUrl + '&page=2').then(r=>r.json()),
-        fetch(tUrl + '&page=1').then(r=>r.json()), fetch(tUrl + '&page=2').then(r=>r.json())
-    ]).then(async ([m1, m2, t1, t2]) => { 
-        let combinedMovies = [...(m1.results||[]), ...(m2.results||[])].map(m => ({...m, media_type: 'movie', calc_date: m.release_date}));
-        let tvBaseList = [...(t1.results||[]), ...(t2.results||[])];
-        
-        const tvDetailsPromises = tvBaseList.slice(0, 25).map(t => fetch(`https://api.themoviedb.org/3/tv/${t.id}?api_key=${TMDB_KEY}`).then(r=>r.json()).catch(()=>null));
-        const tvDetailsData = await Promise.all(tvDetailsPromises);
-        
-        let combinedTv = tvDetailsData.filter(Boolean).map(t => {
+
+    trpc.tmdb.upcomingDiscovery.query({ startDate, endDate, region: activeTab(), language: lang() }).then(({ movies: discoveredMovies, tvDetails }) => {
+        let combinedMovies = (discoveredMovies || []).map(m => ({...m, media_type: 'movie', calc_date: m.release_date}));
+        let combinedTv = (tvDetails || []).map(t => {
             let nextEp = t.next_episode_to_air;
             let d = nextEp ? nextEp.air_date : (t.first_air_date || startDate);
             let isReturning = !!nextEp;
@@ -115,12 +100,13 @@ export function UpcomingView(props) {
 
         let resList = [...combinedMovies, ...combinedTv].filter(item => item.calc_date && item.poster_path);
         resList.sort((a,b) => new Date(a.calc_date) - new Date(b.calc_date));
-        
+
         const unique = []; const seen = new Set();
         for(const item of resList) { if(!seen.has(item.id)) { seen.add(item.id); unique.push(item); } }
-        setMovies(unique); setLoading(false); 
+        setMovies(unique); setLoading(false);
     }).catch(()=>setLoading(false));
   });
+
 
   const handleAdd = async (m) => {
     if (props.isGuest) {
@@ -130,7 +116,7 @@ export function UpcomingView(props) {
     }
     if(props.watchlist().some(item => String(item.id) === String(m.id))) return props.showToast("Already in vault!");
     const endpoint = m.media_type === 'tv' ? 'tv' : 'movie';
-    const detailRes = await fetch(`https://api.themoviedb.org/3/${endpoint}/${m.id}?api_key=${TMDB_KEY}`); const fullData = await detailRes.json();
+    const fullData = await trpc.tmdb.details.query({ mediaType: endpoint, id: Number(m.id) });
     await setDoc(doc(db, 'users', props.uid, 'watchlist', String(m.id)), {
       id: m.id, title: m.title || m.name, poster_path: m.poster_path, backdrop_path: m.backdrop_path, media_type: m.media_type, status: 'Planned', addedAt: serverTimestamp(),
       release_date: m.calc_date || '', region: activeTab() === 'Indian' ? 'Indian' : 'International', season: 1, episode: 0, totalEps: fullData.number_of_episodes || 0, runtime: fullData.runtime || fullData.episode_run_time?.[0] || 0

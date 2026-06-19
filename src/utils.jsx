@@ -1,11 +1,10 @@
-export const TMDB_KEY = import.meta.env.VITE_TMDB_API_KEY;
-export const OMDB_KEY = import.meta.env.VITE_OMDB_API_KEY;
+import { trpc } from './lib/trpc';
 
 
 const TMDB_PROVIDER_CACHE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const fetchTmdbWatchProviders = async (mediaType, id) => {
-  if (!id || !TMDB_KEY) return null;
+  if (!id) return null;
   const type = mediaType === 'tv' ? 'tv' : 'movie';
   const cacheKey = `tmdb_providers_${type}_${id}`;
 
@@ -15,9 +14,7 @@ export const fetchTmdbWatchProviders = async (mediaType, id) => {
   } catch (e) {}
 
   try {
-    const res = await fetch(`https://api.themoviedb.org/3/${type}/${id}/watch/providers?api_key=${TMDB_KEY}`);
-    if (!res.ok) return null;
-    const data = await res.json();
+    const data = await trpc.tmdb.watchProviders.query({ mediaType: type, id: Number(id) });
     try { localStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data })); } catch (e) {}
     return data;
   } catch (e) {

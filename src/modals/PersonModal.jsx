@@ -1,7 +1,8 @@
 import { createSignal, createEffect, createMemo, Show, For, onMount, onCleanup } from 'solid-js';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, TMDB_KEY } from '../utils';
+import { Icon } from '../utils';
+import { trpc } from '../lib/trpc';
 
 export function PersonModal(props) {
   const [person, setPerson] = createSignal(null);
@@ -14,8 +15,7 @@ export function PersonModal(props) {
 
   createEffect(() => {
     if (props.personId) {
-      fetch(`https://api.themoviedb.org/3/person/${props.personId}?api_key=${TMDB_KEY}&append_to_response=combined_credits`)
-        .then(r => r.json())
+      trpc.tmdb.details.query({ mediaType: 'person', id: Number(props.personId), appendToResponse: 'combined_credits' })
         .then(data => {
           setPerson(data);
           setCredits(data.combined_credits || { cast: [], crew: [] });
@@ -58,9 +58,7 @@ export function PersonModal(props) {
     }
     props.showToast("Adding to Vault...");
     try {
-      const tmdbData = await (await fetch(
-        `https://api.themoviedb.org/3/${item.media_type}/${item.id}?api_key=${TMDB_KEY}&append_to_response=credits`
-      )).json();
+      const tmdbData = await trpc.tmdb.details.query({ mediaType: item.media_type, id: Number(item.id), appendToResponse: 'credits' });
       const castNames = tmdbData.credits?.cast?.slice(0, 5).map(c => c.name) || [];
       const director = tmdbData.credits?.crew?.find(c => c.job === 'Director')?.name || '';
       const castList = [...castNames, director].filter(Boolean);

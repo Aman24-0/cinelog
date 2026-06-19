@@ -1,10 +1,10 @@
 /**
  * AIRecommend.jsx
- * Uses @google/generative-ai directly — no firebase/ai dependency needed.
+ * Uses the backend AI tRPC procedure so Gemini credentials stay server-only.
  */
 
 import { createSignal, createMemo, Show, For, onMount } from 'solid-js';
-import { geminiModel } from '../firebase';
+import { trpc } from '../lib/trpc';
 import { getSafeGenres } from '../utils';
 
 const CACHE_KEY = 'cinelog_ai_recommendations_v2';
@@ -59,22 +59,6 @@ const SkeletonCard = () => (
 );
 
 export function AIRecommend(props) {
-  const hasGeminiApiKey = Boolean(import.meta.env.VITE_GEMINI_API_KEY?.trim());
-
-  if (!hasGeminiApiKey) {
-    return (
-      <div class="glass-surface rounded-[2rem] p-8 border border-white/5 text-center relative overflow-hidden" style="background: var(--raised)">
-        <div class="absolute -top-10 -right-10 w-40 h-40 rounded-full opacity-10 blur-3xl pointer-events-none" style="background: radial-gradient(circle, var(--p), transparent)" />
-        <div class="w-20 h-20 rounded-3xl flex items-center justify-center mb-6 mx-auto"
-          style="background: var(--p-dim); border: 1px solid var(--border-active)">
-          <span class="material-symbols-outlined filled text-5xl" style="color: var(--p)">auto_awesome</span>
-        </div>
-        <h3 class="font-headline text-3xl text-white mb-3">AI Recommendations Unavailable</h3>
-        <p class="text-sm leading-relaxed max-w-md mx-auto" style="color: var(--muted)">VITE_GEMINI_API_KEY is not configured. Add it to your environment variables to enable Gemini-powered recommendations.</p>
-      </div>
-    );
-  }
-
   const [recommendations, setRecommendations] = createSignal([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal('');
@@ -130,13 +114,8 @@ export function AIRecommend(props) {
     setHasRun(true);
 
     try {
-      const prompt =
-        `User top rated/watched titles:\n${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}\n\n` +
-        `Favorite genres: ${favoriteGenres().join(', ') || 'unknown'}\n` +
-        `Recommend 10 movies or shows the user has not seen. Return JSON array only: [{"title":"...","reason":"short reason"}].`;
-
-      const result = await geminiModel.generateContent(prompt);
-      const text = result.response.text();
+      const result = await trpc.ai.recommendations.mutate({ titles, favoriteGenres: favoriteGenres() });
+      const text = result.text;
       const parsed = parseRecommendations(text).filter(item => !seen.has(item.title.toLowerCase())).slice(0, 10);
 
       if (parsed.length === 0) throw new Error('Unexpected format');
@@ -144,7 +123,7 @@ export function AIRecommend(props) {
       localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), items: parsed }));
     } catch (err) {
       console.error('[AIRecommend]', err);
-      if (err?.message?.includes('API_KEY')) setError('API key missing. Add VITE_GEMINI_API_KEY in Netlify environment variables.');
+      if (err?.message?.includes('GEMINI_API_KEY')) setError('AI recommendations are not configured on the server.');
       else if (err?.message?.includes('quota') || err?.status === 429) setError('API quota reached. Try again in a minute.');
       else setError('Gemini se response nahi aaya. Dobara try karo.');
     } finally {

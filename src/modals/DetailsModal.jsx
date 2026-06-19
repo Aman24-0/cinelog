@@ -1,7 +1,8 @@
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
 import { collection, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY, fetchTmdbWatchProviders } from '../utils';
+import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, fetchTmdbWatchProviders } from '../utils';
+import { trpc } from '../lib/trpc';
 import { PersonModal } from './PersonModal';
 
 const DEFAULT_SERVERS = [
@@ -172,9 +173,7 @@ export function DetailsModal(props) {
 
     setSeasonsLoading(true);
     try {
-      const res = await fetch(`https://api.themoviedb.org/3/tv/${movie().id}/season/${seasonNumber}?api_key=${TMDB_KEY}`);
-      if (!res.ok) throw new Error('season fetch failed');
-      const season = await res.json();
+      const season = await trpc.tmdb.seasonDetails.query({ tvId: Number(movie().id), seasonNumber: Number(seasonNumber) });
       const nextCache = {
         timestamp: Date.now(),
         seasons: { ...(cache.seasons || {}), [seasonNumber]: season }
@@ -426,19 +425,8 @@ export function DetailsModal(props) {
     const m = movie();
     if (!m?.id) { setSimilarItems([]); return; }
     const mediaType = m.media_type === 'tv' ? 'tv' : 'movie';
-    fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/recommendations?api_key=${TMDB_KEY}&language=en-US&page=1`)
-      .then(r => r.json())
-      .then(d => {
-        let results = (d.results || []).filter(x => x.poster_path).slice(0, 12);
-        if (results.length === 0) {
-          fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/similar?api_key=${TMDB_KEY}&language=en-US&page=1`)
-            .then(r => r.json())
-            .then(d2 => setSimilarItems((d2.results || []).filter(x => x.poster_path).slice(0, 12)))
-            .catch(() => setSimilarItems([]));
-        } else {
-          setSimilarItems(results);
-        }
-      })
+    trpc.tmdb.recommendations.query({ mediaType, id: Number(m.id), page: 1, fallbackSimilar: true })
+      .then(d => setSimilarItems((d.results || []).filter(x => x.poster_path).slice(0, 12)))
       .catch(() => setSimilarItems([]));
   });
 
@@ -471,7 +459,7 @@ export function DetailsModal(props) {
               });
           }
           
-          fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}?api_key=${TMDB_KEY}&append_to_response=videos,credits`).then(r=>r.json()).then(async d=>{
+          trpc.tmdb.details.query({ mediaType: movie().media_type || 'movie', id: Number(movie().id), appendToResponse: 'videos,credits' }).then(async d=>{
               setDetails(d);
               if (movie().media_type === 'tv' && !isPreview() && !props.isGuest) {
                   const regularSeasons = (d.seasons || []).filter(s => Number(s.season_number) > 0);
@@ -493,7 +481,7 @@ export function DetailsModal(props) {
           });
 
           const title = movie().title || movie().name;
-          fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_KEY}`).then(r=>r.json()).then(d=>{
+          trpc.omdb.ratings.query({ title }).then(d=>{
               if(d.Response === 'True') {
                   const rt = d.Ratings?.find(r=>r.Source === 'Rotten Tomatoes')?.Value || '-';
                   setOmdbData({ imdb: d.imdbRating || '-', rt: rt });

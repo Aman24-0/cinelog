@@ -1,7 +1,8 @@
 import { createSignal, Show, For } from 'solid-js';
 import { doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, TMDB_KEY, cleanPlatform } from '../utils';
+import { Icon, cleanPlatform } from '../utils';
+import { trpc } from '../lib/trpc';
 
 
 export function DataSync(props) {
@@ -37,9 +38,8 @@ export function DataSync(props) {
           let newGenres = item.genresList || [];
           let newTotalEps = item.totalEps || 0;
 
-          const tmdbRes = await fetch(`https://api.themoviedb.org/3/${item.media_type||'movie'}/${item.id}?api_key=${TMDB_KEY}&append_to_response=watch/providers`);
-          if (tmdbRes.ok) {
-              const data = await tmdbRes.json();
+          const data = await trpc.tmdb.details.query({ mediaType: item.media_type || 'movie', id: Number(item.id), appendToResponse: 'watch/providers' });
+          if (data) {
               if (data.genres) data.genres.forEach(g => { if(!newGenres.includes(g.name)) newGenres.push(g.name); });
               if (data.number_of_episodes) newTotalEps = data.number_of_episodes;
 
