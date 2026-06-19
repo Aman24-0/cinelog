@@ -2,32 +2,41 @@ import express from 'express';
 import cors from 'cors';
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import { appRouter } from './routers.js';
-import { createContext } from './context.js';
 import { streamTorrent } from './streamer.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 
+// ✅ CRITICAL: Configure CORS for Netlify + Render
 app.use(cors({
-  origin: function (origin, callback) {
-    callback(null, true);
-  },
-  credentials: true,
+  origin: ['https://cinlog.netlify.app', 'http://localhost:5173', 'http://localhost:3000'],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
 }));
+
+// Parse JSON bodies
 app.use(express.json());
 
-app.use('/api/trpc', createExpressMiddleware({
+// tRPC Endpoint
+app.use('/trpc', createExpressMiddleware({
   router: appRouter,
-  createContext,
+  createContext: ({ req, res }) => ({ req, res }),
 }));
 
-// Torrent Streaming Route
+// Streaming Endpoint
 app.get('/api/stream', streamTorrent);
 
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' });
+// Health Check
+app.get('/', (req, res) => {
+  res.json({ status: 'Cinelog Backend is Running 🚀' });
 });
 
 app.listen(PORT, () => {
-  console.log(`🎬 Cinelog Backend Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📡 tRPC endpoint: http://localhost:${PORT}/trpc`);
+  console.log(`🎬 Stream endpoint: http://localhost:${PORT}/api/stream`);
 });
