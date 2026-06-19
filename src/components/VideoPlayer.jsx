@@ -2,7 +2,7 @@ import { onMount, onCleanup } from 'solid-js';
 import videojs from 'video.js';
 import 'video.js/dist/video-js.css';
 
-export function VideoPlayer(props) {
+export default function VideoPlayer(props) {
   let videoRef;
   let player;
 
