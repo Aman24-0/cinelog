@@ -1,5 +1,4 @@
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
-import superjson from 'superjson';
 
 // Smart URL detection: Localhost par alag, Netlify par Render ka URL
 const getBackendUrl = () => {
@@ -11,7 +10,7 @@ const getBackendUrl = () => {
 };
 
 export const trpc = createTRPCProxyClient({
-  transformer: superjson,
+  // Yahan se 'transformer' hata diya gaya hai taaki backend se match ho jaye
   links: [
     httpBatchLink({
       url: `${getBackendUrl()}/api/trpc`,
