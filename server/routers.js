@@ -64,7 +64,7 @@ const scrapeVideoSource = publicProcedure
       const cacheKey = `${input.type}:${imdbId}`;
       const cached = torrentCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-        console.log(`📦 Cache hit for ${cacheKey}`);
+        console.log(` Cache hit for ${cacheKey}`);
         return cached.data;
       }
 
@@ -79,7 +79,7 @@ const scrapeVideoSource = publicProcedure
       let lastError;
       for (let attempt = 1; attempt <= proxyUrls.length; attempt++) {
         try {
-          console.log(`📡 Attempt ${attempt}: Fetching via proxy for ${imdbId}`);
+          console.log(` Attempt ${attempt}: Fetching via proxy for ${imdbId}`);
           const response = await fetch(proxyUrls[attempt - 1], {
             signal: AbortSignal.timeout(15000) // 15s timeout
           });
