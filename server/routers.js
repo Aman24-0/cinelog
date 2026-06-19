@@ -21,7 +21,6 @@ const searchMovies = publicProcedure
       if (!response.ok) throw new Error(`TMDB API error: ${response.statusText}`);
       
       const data = await response.json();
-      // Note: TMDB Search DOES NOT return imdb_id. We will fetch it later in scrapeVideoSource.
       const movies = (data.results || []).slice(0, 10).map(movie => ({
         id: movie.id,
         title: movie.title,
@@ -39,17 +38,16 @@ const searchMovies = publicProcedure
   });
 
 /**
- * ✅ REPLACED: Uses FREE Torrentio API instead of Prowlarr
- * Automatically fetches IMDB ID from TMDB Details endpoint before scraping
+ * ✅ FIXED: Uses FREE Torrentio API with proper error handling & retries
  */
 const scrapeVideoSource = publicProcedure
   .input(z.object({
-    tmdbId: z.number(), // Changed from movieTitle/year to tmdbId
+    tmdbId: z.number(),
     type: z.enum(['movie', 'series']).default('movie')
   }))
-  .mutation(async ({ input }) => {    try {
-      // 1. First, get the IMDB ID from TMDB Movie Details + External IDs
-      console.log(` Fetching IMDB ID for TMDB ID: ${input.tmdbId}`);
+  .mutation(async ({ input }) => {
+    try {
+      // 1. Get IMDB ID from TMDB      console.log(`🔍 Fetching IMDB ID for TMDB ID: ${input.tmdbId}`);
       const detailsRes = await fetch(
         `${TMDB_BASE_URL}/movie/${input.tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`
       );
@@ -62,7 +60,7 @@ const scrapeVideoSource = publicProcedure
       
       console.log(`✅ Found IMDB ID: ${imdbId}`);
 
-      // 2. Check cache first to avoid rate limits
+      // 2. Check cache first
       const cacheKey = `${input.type}:${imdbId}`;
       const cached = torrentCache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -70,69 +68,67 @@ const scrapeVideoSource = publicProcedure
         return cached.data;
       }
 
-      // 3. Fetch streams from Torrentio using the real IMDB ID
+      // 3. Fetch streams from Torrentio WITH RETRY LOGIC
       console.log(`📡 Fetching streams from Torrentio for: ${imdbId}`);
-      const response = await fetch(
-        `https://torrentio.strem.fun/stream/${input.type}/${imdbId}.json`
-      );
-
-      if (!response.ok) throw new Error('Torrentio API unavailable');
+      let lastError;
       
-      const data = await response.json();
-      
-      // Transform Torrentio format to match existing VideoPlayer
-      const streams = (data.streams || []).map(stream => ({
-        title: stream.title.replace(/\s*\d+\s*️/g, '').trim(),
-        magnet: stream.url, // Torrentio returns direct magnet links
-        seeders: parseInt(stream.title.match(/👤\s*(\d+)/)?.[1] || '0'),
-        size: stream.title.match(/\s*([\d.]+\s*[A-Z]+)/)?.[1] || 'Unknown',
-        indexer: 'Torrentio'
-      })).filter(s => s.magnet && s.magnet.startsWith('magnet:'));
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const response = await fetch(
+            `https://torrentio.strem.fun/stream/${input.type}/${imdbId}.json`,
+            { signal: AbortSignal.timeout(10000) } // 10s timeout
+          );
 
-      const result = {
-        success: true,
-        sources: streams,
-        source: 'torrentio'
-      };
+          // ✅ FIXED: Don't throw on !response.ok immediately. Parse JSON first.
+          const data = await response.json();
+          
+          // Handle Torrentio's empty result format
+          if (!data.streams || data.streams.length === 0) {
+            console.log(`⚠️ No streams found on Torrentio for ${imdbId}`);
+            return { success: true, sources: [], source: 'torrentio' };
+          }
 
-      // Store in cache
-      torrentCache.set(cacheKey, { data: result, timestamp: Date.now() });      
-      console.log(`✅ Found ${streams.length} streams via Torrentio`);
-      return result;
+          // Transform streams
+          const streams = data.streams.map(stream => ({
+            title: stream.title.replace(/\s*\d+\s*️/g, '').trim(),
+            magnet: stream.url,
+            seeders: parseInt(stream.title.match(/👤\s*(\d+)/)?.[1] || '0'),
+            size: stream.title.match(/\s*([\d.]+\s*[A-Z]+)/)?.[1] || 'Unknown',
+            indexer: 'Torrentio'
+          })).filter(s => s.magnet && s.magnet.startsWith('magnet:'));
+          const result = {
+            success: true,
+            sources: streams,
+            source: 'torrentio'
+          };
+
+          // Store in cache
+          torrentCache.set(cacheKey, { data: result, timestamp: Date.now() });
+          
+          console.log(`✅ Found ${streams.length} streams via Torrentio`);
+          return result;
+
+        } catch (err) {
+          lastError = err;
+          console.warn(`⚠️ Torrentio attempt ${attempt} failed: ${err.message}`);
+          if (attempt < 3) await new Promise(r => setTimeout(r, 1500)); // Wait before retry
+        }
+      }
+
+      // All retries failed
+      throw new Error(`Torrentio API failed after 3 attempts: ${lastError.message}`);
+
     } catch (error) {
       console.error('Scrape failed:', error);
       return { success: false, message: error.message };
     }
   });
 
-/**
- * Get TMDB configuration
- */
-const getTmdbConfig = publicProcedure.query(async () => {
-  try {
-    const res = await fetch(`${TMDB_BASE_URL}/configuration?api_key=${TMDB_API_KEY}`);
-    const config = await res.json();
-    return { success: true, imageBaseUrl: config.images.base_url };
-  } catch (e) {
-    return { success: false, error: e.message };
-  }
-});
-
-/**
- * Health check
- */
-const health = publicProcedure.query(() => ({
-  status: 'ok',
-  timestamp: new Date().toISOString(),
-}));
-
 export const appRouter = router({
   movies: router({
     search: searchMovies,
     scrapeVideoSource,
-    getTmdbConfig,
   }),
-  health,
 });
 
 export {};
