@@ -18,12 +18,15 @@ import { MovieStreamModal } from './modals/MovieStreamModal';
 import { MovieStreamFAB } from './components/MovieStreamFAB';
 import VideoPlayer from './components/VideoPlayer';
 import { useModalState } from './hooks/useModalState';
+import { ConfirmDialog } from './components/ConfirmDialog';
 
 const NavBtn = (props) => (
   <button
     onClick={props.onClick}
     class="flex flex-col lg:flex-row items-center gap-1 lg:gap-4 w-14 lg:w-full lg:px-4 lg:py-3 lg:rounded-xl lg:hover:bg-white/5 transition-all"
     style={props.active ? 'color: var(--p)' : 'color: var(--dim)'}
+    aria-label={`Navigate to ${props.label}`}
+    aria-current={props.active ? 'page' : undefined}
   >
     <Icon name={props.icon} fill={props.active} />
     <span class="label-mono lg:text-[10px] lg:font-bold lg:uppercase lg:tracking-[0.2em]">{props.label}</span>
@@ -66,10 +69,30 @@ export default function App() {  const [user, setUser] = createSignal(null);
   } = useModalState();
   const [userMenuOpen, setUserMenuOpen] = createSignal(false);
   const [toast, setToast] = createSignal({ show: false, msg: '' });
+  const [showNukeDialog, setShowNukeDialog] = createSignal(false);
 
   const showToast = (msg) => {
     setToast({ show: true, msg });
     setTimeout(() => setToast({ show: false, msg: '' }), 3000);
+  };
+  
+  const handleNukeVault = () => {
+    setShowNukeDialog(true);
+    setUserMenuOpen(false);
+  };
+  
+  const confirmNukeVault = async () => {
+    if (!user()) return;
+    showToast("Nuking Vault...");
+    const snap = await getDocs(collection(db, 'users', user().uid, 'watchlist'));
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 500) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + 500).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    showToast("Vault wiped!");
+    setShowNukeDialog(false);
   };
 
   const handleLogin = () => signInWithPopup(auth, new GoogleAuthProvider());
@@ -79,15 +102,33 @@ export default function App() {  const [user, setUser] = createSignal(null);
 
   onMount(() => {
     setTimeout(() => setSplashWait(false), 3000);
-    onAuthStateChanged(auth, (u) => {
+    
+    // Store unsubscribe functions for cleanup
+    let unsubscribeAuth = null;
+    let unsubscribeWatchlist = null;
+    let unsubscribeFranchises = null;
+    
+    unsubscribeAuth = onAuthStateChanged(auth, (u) => {
       setUser(u);
+      
+      // Cleanup previous listeners when user changes
+      if (unsubscribeWatchlist) unsubscribeWatchlist();
+      if (unsubscribeFranchises) unsubscribeFranchises();
+      
       if (u) {
         let wReady = false; let fReady = false;
-        onSnapshot(query(collection(db, 'users', u.uid, 'watchlist'), orderBy('addedAt', 'desc')), (snap) => {
-          setWatchlist(snap.docs.map(d => ({ id: d.id, ...d.data() }))); wReady = true; if (fReady) setLoading(false);
+        
+        // Store unsubscribe functions for snapshot listeners
+        unsubscribeWatchlist = onSnapshot(query(collection(db, 'users', u.uid, 'watchlist'), orderBy('addedAt', 'desc')), (snap) => {
+          setWatchlist(snap.docs.map(d => ({ id: d.id, ...d.data() }))); 
+          wReady = true; 
+          if (fReady) setLoading(false);
         });
-        onSnapshot(collection(db, 'users', u.uid, 'franchises'), (snap) => {
-          setFranchises(snap.docs.map(d => ({ id: d.id, ...d.data() }))); fReady = true; if (wReady) setLoading(false);
+        
+        unsubscribeFranchises = onSnapshot(collection(db, 'users', u.uid, 'franchises'), (snap) => {
+          setFranchises(snap.docs.map(d => ({ id: d.id, ...d.data() }))); 
+          fReady = true; 
+          if (wReady) setLoading(false);
         });
       } else {
         setWatchlist([]);
@@ -95,24 +136,14 @@ export default function App() {  const [user, setUser] = createSignal(null);
         setLoading(false);
       }
     });
+    
+    // Cleanup on component unmount
+    onCleanup(() => {
+      if (unsubscribeAuth) unsubscribeAuth();
+      if (unsubscribeWatchlist) unsubscribeWatchlist();
+      if (unsubscribeFranchises) unsubscribeFranchises();
+    });
   });
-  const nukeCollection = async () => {
-    if (!user()) return;
-    if (!confirm("This will permanently delete your entire Vault. Are you sure?")) return;
-    if (prompt("Type DELETE to confirm") !== "DELETE") {
-      showToast("Cancelled. Vault is safe.");
-      return;
-    }
-    showToast("Nuking Vault...");
-    const snap = await getDocs(collection(db, 'users', user().uid, 'watchlist'));
-    const docs = snap.docs;
-    for (let i = 0; i < docs.length; i += 500) {
-      const batch = writeBatch(db);
-      docs.slice(i, i + 500).forEach(d => batch.delete(d.ref));
-      await batch.commit();
-    }
-    showToast("Vault wiped!"); setUserMenuOpen(false);
-  };
 
   return (
     <ErrorBoundary fallback={() => (
@@ -165,6 +196,7 @@ export default function App() {  const [user, setUser] = createSignal(null);
                 onClick={() => setSettingsModal(true)}
                 class="glass-surface p-2.5 rounded-full"
                 style="border-color: var(--border-active)"
+                aria-label="Open theme settings"
               >
                 <Icon name="palette" class="text-sm" style="color: var(--muted)" />
               </button>
@@ -175,6 +207,7 @@ export default function App() {  const [user, setUser] = createSignal(null);
                   onClick={handleLogin}
                   class="px-5 py-2 rounded-full font-bold text-black text-[10px] uppercase tracking-widest shadow-lg active:scale-95 transition-all"
                   style="background: var(--p); box-shadow: 0 0 16px var(--p-glow)"
+                  aria-label="Sign in to your account"
                 >
                   Sign In
                 </button>
@@ -182,9 +215,13 @@ export default function App() {  const [user, setUser] = createSignal(null);
                 <div class="relative">
                   <img
                     src={user().photoURL}
+                    alt={`${user().displayName || 'User'} profile`}
                     onClick={(e) => { e.stopPropagation(); setUserMenuOpen(!userMenuOpen()); }}
                     class="w-9 h-9 rounded-full cursor-pointer object-cover"
                     style="border: 2px solid var(--p); box-shadow: 0 0 12px var(--p-glow)"
+                    tabIndex="0"
+                    role="button"
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setUserMenuOpen(!userMenuOpen()); } }}
                   />
                   <Show when={userMenuOpen()}>
                     <div class="fixed inset-0 z-[90]" onClick={() => setUserMenuOpen(false)} />
@@ -325,6 +362,7 @@ export default function App() {  const [user, setUser] = createSignal(null);
               <button
                 onClick={() => setCurrentVideo(null)}
                 class="absolute top-6 right-6 p-3 rounded-full hover:bg-white/10 transition-colors active:scale-95 z-[100001]"
+                aria-label="Close video player"
               >
                 <Icon name="close" class="text-2xl text-white" />
               </button>

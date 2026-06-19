@@ -2,24 +2,88 @@ import torrentStream from 'torrent-stream';
 import mime from 'mime-types';
 import path from 'path';
 
-export const streamTorrent = async (req, res) => {
-  const magnetUri = req.query.magnet;
+// Rate limiting store (in-memory for simplicity; use Redis in production)
+const requestCounts = new Map();
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 10;
 
+// Validate magnet link format
+function isValidMagnetLink(magnet) {
+  if (!magnet || typeof magnet !== 'string') return false;
+  // Basic magnet link format validation
+  return magnet.startsWith('magnet:?xt=urn:btih:') && magnet.length > 40;
+}
+
+// Check rate limit for IP
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const userRequests = requestCounts.get(ip) || [];
+  
+  // Filter out old requests outside the window
+  const recentRequests = userRequests.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW_MS);
+  
+  if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+    return false; // Rate limited
+  }
+  
+  recentRequests.push(now);
+  requestCounts.set(ip, recentRequests);
+  return true;
+}
+
+// Cleanup old rate limit data periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, timestamps] of requestCounts.entries()) {
+    const recent = timestamps.filter(ts => now - ts < RATE_LIMIT_WINDOW_MS);
+    if (recent.length === 0) {
+      requestCounts.delete(ip);
+    } else {
+      requestCounts.set(ip, recent);
+    }
+  }
+}, RATE_LIMIT_WINDOW_MS);
+
+export const streamTorrent = async (req, res) => {
+  const clientIP = req.ip || req.connection.remoteAddress || 'unknown';
+  
+  // Rate limiting check
+  if (!checkRateLimit(clientIP)) {
+    console.warn(`⚠️ Rate limit exceeded for IP: ${clientIP}`);
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
+  
+  const magnetUri = req.query.magnet;
+  
+  // Input validation
   if (!magnetUri) {
+    console.warn(`❌ Missing magnet parameter from IP: ${clientIP}`);
     return res.status(400).json({ error: 'Missing magnet link' });
   }
-
-  console.log(`📥 Starting stream for magnet: ${magnetUri.substring(0, 20)}...`);
+  
+  if (!isValidMagnetLink(magnetUri)) {
+    console.warn(`❌ Invalid magnet link format from IP: ${clientIP}`);
+    return res.status(400).json({ error: 'Invalid magnet link format' });
+  }
+  
+  console.log(`📥 Starting stream for magnet: ${magnetUri.substring(0, 20)}... from IP: ${clientIP}`);
 
   // Initialize the torrent stream engine
   const engine = torrentStream(magnetUri, {
-    connections: 50, // Max peers
+    connections: 30, // Reduced max peers for resource control
     path: '/tmp',    // Temporary storage on Render
-    verify: true     // Verify data integrity
+    verify: true,     // Verify data integrity
+    maxBufferLength: 10 * 1024 * 1024, // 10MB max buffer
   });
 
   let fileFound = false;
   let currentFile = null;
+  let timeoutId = null;
+
+  const cleanup = () => {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (engine) engine.destroy();
+  };
 
   // Handle engine errors
   engine.on('error', (err) => {
@@ -27,7 +91,7 @@ export const streamTorrent = async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to initialize torrent stream' });
     }
-    engine.destroy();
+    cleanup();
   });
 
   engine.on('ready', () => {
@@ -47,7 +111,7 @@ export const streamTorrent = async (req, res) => {
       if (!res.headersSent) {
         res.status(404).json({ error: 'No playable video file found in this torrent.' });
       }
-      engine.destroy();
+      cleanup();
       return;
     }
 
@@ -80,7 +144,7 @@ export const streamTorrent = async (req, res) => {
       req.on('close', () => {
         console.log('🔌 Client disconnected. Stopping stream.');
         stream.destroy();
-        engine.destroy();
+        cleanup();
       });
 
       stream.pipe(res);
@@ -96,11 +160,11 @@ export const streamTorrent = async (req, res) => {
   });
 
   // Timeout safety: If no file found within 30 seconds
-  setTimeout(() => {
+  timeoutId = setTimeout(() => {
     if (!fileFound && !res.headersSent) {
       console.error('⏱️ Stream timeout: No file found within 30s');
       res.status(504).json({ error: 'Timeout: Could not find video file in torrent.' });
-      engine.destroy();
+      cleanup();
     }
   }, 30000);
 };

@@ -7,15 +7,18 @@ export default function VideoPlayer(props) {
   let player;
 
   onMount(() => {
-    if (!props.magnetLink) {
-      console.error('❌ No magnet link provided to VideoPlayer');
+    // Support both magnetLink (legacy) and source/videoUrl (new) props
+    const magnetLink = props.magnetLink || props.source;
+
+    if (!magnetLink) {
+      console.error('❌ No magnet link or source provided to VideoPlayer');
       return;
     }
 
     // ✅ CRITICAL FIX: Construct the backend stream URL
     // Replace with your actual Render backend URL if different
-    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://cinelog-ultimate-backend.onrender.com'; 
-    const streamUrl = `${BACKEND_URL}/api/stream?magnet=${encodeURIComponent(props.magnetLink)}`;
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://cinelog-ultimate-backend.onrender.com';
+    const streamUrl = `${BACKEND_URL}/api/stream?magnet=${encodeURIComponent(magnetLink)}`;
 
     console.log('🎬 Using Backend Stream URL:', streamUrl);
 
@@ -71,7 +74,7 @@ export default function VideoPlayer(props) {
   return (
     <div class="w-full max-w-4xl mx-auto bg-black rounded-lg overflow-hidden shadow-2xl">
       <div ref={videoRef} class="w-full h-full" />
-      {!props.magnetLink && (
+      {!props.magnetLink && !props.source && (
         <div class="p-8 text-center text-gray-400">
           Select a torrent to start streaming...
         </div>
