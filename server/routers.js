@@ -95,7 +95,7 @@ const scrapeVideoSource = publicProcedure
           
           // Handle empty results gracefully
           if (!data.streams || data.streams.length === 0) {
-            console.log(`⚠️ No streams found on Torrentio for ${imdbId}`);
+            console.log(`️ No streams found on Torrentio for ${imdbId}`);
             return { success: true, sources: [], source: 'torrentio' };          }
 
           // Transform streams
