@@ -1,8 +1,15 @@
 import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
-import { collection, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs } from 'firebase/firestore';
+import { collection, doc, updateDoc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY, fetchTmdbWatchProviders } from '../utils';
+import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY } from '../utils';
 import { PersonModal } from './PersonModal';
+import { DetailsHero } from '../components/details/DetailsHero';
+import { RatingsPanel } from '../components/details/RatingsPanel';
+import { SimilarItems } from '../components/details/SimilarItems';
+import { useTmdbDetails } from '../hooks/useTmdbDetails';
+import { useOmdbRatings } from '../hooks/useOmdbRatings';
+import { useWatchProgress } from '../hooks/useWatchProgress';
+import { addPreviewToWatchlist, deleteWatchlistItem, updateWatchlistItem, upsertEpisodeWatchState } from '../services/watchlistService';
 
 const DEFAULT_SERVERS = [
   { id: 'vidzee', name: 'VidZee (Fast)', movieUrl: 'https://player.vidzee.wtf/embed/movie/{id}', tvUrl: 'https://player.vidzee.wtf/embed/tv/{id}/{season}/{episode}', icon: 'smart_display' },
@@ -13,43 +20,6 @@ const DEFAULT_SERVERS = [
   { id: 'autoembed', name: 'AutoEmbed', movieUrl: 'https://autoembed.co/movie/tmdb/{id}', tvUrl: 'https://autoembed.co/tv/tmdb/{id}-{season}-{episode}', icon: 'bolt' },
   { id: 'vidnest', name: 'VidNest (Official)', movieUrl: 'https://vidnest.fun/movie/{id}', tvUrl: 'https://vidnest.fun/tv/{id}/{season}/{episode}', icon: 'play_circle' }
 ];
-
-const getPlatformDict = (title, platformName) => {
-    const enc = encodeURIComponent(title || '');
-    const cleanN = platformName ? platformName.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
-    const dbData = {
-        'netflix': { name: 'Netflix', logo: 'https://image.tmdb.org/t/p/w92/t2yyOv40HZeVlLjVrCsPhIdZfC4.jpg', url: `https://www.netflix.com/search?q=${enc}` },
-        'amazonprimevideo': { name: 'Amazon Prime Video', logo: 'https://image.tmdb.org/t/p/w92/5NyLm42TmCqCMOZFvH4fvn2FI11.jpg', url: `https://www.primevideo.com/search/ref=atv_sr_sug_sc?phrase=${enc}` },
-        'primevideo': { name: 'Amazon Prime Video', logo: 'https://image.tmdb.org/t/p/w92/5NyLm42TmCqCMOZFvH4fvn2FI11.jpg', url: `https://www.primevideo.com/search/ref=atv_sr_sug_sc?phrase=${enc}` },
-        'amazon': { name: 'Amazon Prime Video', logo: 'https://image.tmdb.org/t/p/w92/5NyLm42TmCqCMOZFvH4fvn2FI11.jpg', url: `https://www.primevideo.com/search/ref=atv_sr_sug_sc?phrase=${enc}` },
-        'jiohotstar': { name: 'JioHotstar', logo: 'https://image.tmdb.org/t/p/w92/uzKjVDmQIA2rZGSNpGbnWXUWVQIM.jpg', url: `https://www.hotstar.com/in/explore?searchQuery=${enc}` },
-        'hotstar': { name: 'JioHotstar', logo: 'https://image.tmdb.org/t/p/w92/uzKjVDmQIA2rZGSNpGbnWXUWVQIM.jpg', url: `https://www.hotstar.com/in/explore?searchQuery=${enc}` },
-        'sonyliv': { name: 'Sony LIV', logo: 'https://image.tmdb.org/t/p/w92/8N0DNa4BO3lH24KWv1EjJh4TxGL.jpg', url: `https://www.sonyliv.com/` },
-        'zee5': { name: 'Zee5', logo: 'https://image.tmdb.org/t/p/w92/5vVzg0rtZAwQGzQoT2Zk0n43Nym.jpg', url: `https://www.zee5.com/global/search?q=${enc}` },
-        'appletv': { name: 'Apple TV', logo: 'https://image.tmdb.org/t/p/w92/2E0ficP6ijhlCSJuwHI4isW0QhD.jpg', url: `https://tv.apple.com/` },
-        'crunchyroll': { name: 'Crunchyroll', logo: 'https://image.tmdb.org/t/p/w92/mXeC4TrcgdU6j81XreWIjA6k7yC.jpg', url: `https://www.crunchyroll.com/search?q=${enc}` },
-        'youtube': { name: 'YouTube', logo: 'https://image.tmdb.org/t/p/w92/p3Z12gKq2qvJaUOMeKNU2mzKVI9.jpg', url: `https://www.youtube.com/results?search_query=${enc}` }
-    };
-    return dbData[cleanN] || null;
-};
-
-const getBrandColor = (name) => {
-    const n = name.toLowerCase();
-    if(n.includes('vi ')) return '#ed1c24'; 
-    if(n.includes('aha')) return '#ff6600'; 
-    if(n.includes('hoichoi')) return '#e50b14'; 
-    if(n.includes('sun')) return '#f09a36'; 
-    if(n.includes('voot')) return '#5a2282'; 
-    if(n.includes('mx')) return '#003366'; 
-    if(n.includes('ullu')) return '#00b0b8'; 
-    if(n.includes('alt')) return '#e30f1d'; 
-    if(n.includes('eros')) return '#ff0000'; 
-    if(n.includes('apple')) return '#ffffff'; 
-    if(n.includes('discovery')) return '#001e61'; 
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return `hsl(${Math.abs(hash) % 360}, 70%, 45%)`;
-};
 
 const calculateDays = (start, end) => {
     if (!start || !end) return null;
@@ -77,22 +47,22 @@ export function DetailsModal(props) {
 
   const movie = createMemo(() => overrideItem() || (isPreview() ? previewData() : props.watchlist?.find(m => String(m.id) === String(baseId()))));
   
-  const [details, setDetails] = createSignal({});
+
   const [isEdit, setIsEdit] = createSignal(false); 
-  const [trailerKey, setTrailerKey] = createSignal(null); 
+
   const [playTrailer, setPlayTrailer] = createSignal(false);
   const [showPlayer, setShowPlayer] = createSignal(false); 
   const [activeServer, setActiveServer] = createSignal(null); 
   const [personId, setPersonId] = createSignal(null); 
-  const [omdbData, setOmdbData] = createSignal({ imdb: '-', rt: '-' });
+
   const [form, setForm] = createSignal({ status: '', rating: '', watchDate: '', notes: '', region: '', season: 1, episode: 1, tag: '', platforms: '', genres: '', seasonDates: {} });
   
-  const [richPlatforms, setRichPlatforms] = createSignal([]);
   const [customServers, setCustomServers] = createSignal({});
-  const [similarItems, setSimilarItems] = createSignal([]);
   
   const [watchProgress, setWatchProgress] = createSignal(null);
   const [contentDuration, setContentDuration] = createSignal(0);
+  const { details, trailerKey, richPlatforms, similarItems } = useTmdbDetails(movie, { uid: props.uid, isGuest: props.isGuest, isPreview, setForm, setContentDuration });
+  const { omdbData } = useOmdbRatings(movie, { uid: props.uid, isGuest: props.isGuest, isPreview });
   const [playerSessionStart, setPlayerSessionStart] = createSignal(null);
   const [playerStartProgress, setPlayerStartProgress] = createSignal(0);
   const [receivedRealProgress, setReceivedRealProgress] = createSignal(false);
@@ -121,6 +91,7 @@ export function DetailsModal(props) {
   const selectedSeasonEpisodes = createMemo(() => seasonEpisodes()[selectedSeason()]?.episodes || []);
   const currentSeasonNumber = createMemo(() => parseInt(form().season || movie()?.season || 1) || 1);
   const currentEpisodeNumber = createMemo(() => parseInt(form().episode || movie()?.episode || 1) || 1);
+  const progressControls = useWatchProgress({ movie, isPreview, isGuest: props.isGuest, uid: props.uid, activeServer, watchProgress, setWatchProgress, contentDuration, setContentDuration, playerSessionStart, setPlayerSessionStart, playerStartProgress, setPlayerStartProgress, receivedRealProgress, setReceivedRealProgress, currentSeasonNumber, currentEpisodeNumber, inferDurationSeconds, showToast: props.showToast });
   const episodeDocId = (season, episode) => `s${season}_e${episode}`;
   const compareEpisodePosition = (aSeason, aEpisode, bSeason, bEpisode) => (Number(aSeason) - Number(bSeason)) || (Number(aEpisode) - Number(bEpisode));
   const getEpisodesForSeason = (season) => (seasonEpisodes()[season]?.episodes || []).slice().sort((a, b) => Number(a.episode_number) - Number(b.episode_number));
@@ -242,7 +213,7 @@ export function DetailsModal(props) {
     setWatchedEpisodes(prev => ({ ...prev, [id]: payload }));
 
     try {
-      await setDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id), 'episodes', id), payload, { merge: true });
+      await upsertEpisodeWatchState({ uid: props.uid, itemId: movie().id, episodeId: id, payload });
 
       if (nextWatched) {
         const nextPointer = findNextEpisodePointer(season, episode);
@@ -284,85 +255,7 @@ export function DetailsModal(props) {
     }
   });
   
-  const handlePlayerMessages = (event) => {
-    try {
-        if (event.data?.source?.includes('react-devtools')) return; 
-        
-        let msg = event.data;
-        if (typeof msg === 'string') msg = JSON.parse(msg);
-
-        if (msg?.type === 'MEDIA_DATA' && msg?.data) {
-            const cTime = msg.data.currentTime || msg.data.time || 0;
-            const dur = msg.data.duration || contentDuration() || inferDurationSeconds() || 0;
-            if (cTime > 0) {
-              if (dur > 0) setContentDuration(dur);
-              setReceivedRealProgress(true);
-              setWatchProgress({ currentTime: cTime, duration: dur }); 
-            }
-        }
-        else if (msg?.event === 'timeupdate' && msg?.currentTime) {
-            const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
-            if (msg.currentTime > 0) {
-              if (dur > 0) setContentDuration(dur);
-              setReceivedRealProgress(true);
-              setWatchProgress({ currentTime: msg.currentTime, duration: dur });
-            }
-        }
-        else if (msg?.currentTime !== undefined && typeof msg.currentTime === 'number') {
-            const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
-            if (msg.currentTime > 0) {
-              if (dur > 0) setContentDuration(dur);
-              setReceivedRealProgress(true);
-              setWatchProgress({ currentTime: msg.currentTime, duration: dur });
-            }
-        }
-    } catch (e) {}
-  };
-
-  // FAILSAFE SAVE PROGRESS
-  const saveProgressToDb = async () => {
-      const prog = watchProgress();
-      if (prog && prog.currentTime > 0 && !props.isGuest && movie() && !isPreview()) {
-          try {
-              const updates = {
-                  watchProgress: {
-                      currentTime: prog.currentTime,
-                      duration: prog.duration || contentDuration() || inferDurationSeconds() || 0,
-                      server: activeServer(),
-                      updatedAt: new Date().toISOString(),
-                      season: currentSeasonNumber(),
-                      episode: currentEpisodeNumber()
-                  }
-              };
-              
-              if (movie().status === 'Planned' || movie().status === 'Plan to Watch') {
-                  updates.status = 'Watching';
-              }
-              
-              await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), updates);
-              if(props.showToast) props.showToast("Progress Saved! 🍿");
-              
-              setWatchProgress(null); 
-          } catch (e) { 
-              console.error("Error saving progress", e); 
-          }
-      }
-  };
-
-  const hydrateSessionProgressFromElapsed = () => {
-    const startedAt = playerSessionStart();
-    if (!startedAt) return;
-    if (receivedRealProgress()) return; 
-    const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-    const MIN_SESSION_SECONDS = 60;
-    if (elapsed < MIN_SESSION_SECONDS) return; 
-    const base = Math.max(0, Number(playerStartProgress()) || 0);
-    const dur = contentDuration() || watchProgress()?.duration || inferDurationSeconds() || 0;
-    const next = dur > 0 ? Math.min(base + elapsed, dur) : base + elapsed;
-    if (next > base) {
-      setWatchProgress({ currentTime: next, duration: dur });
-    }
-  };
+  const { primePlaybackProgress, handlePlayerMessages, hydrateSessionProgressFromElapsed, saveProgressToDb } = progressControls;
 
   createEffect(() => {
       if (isResume() && movie() && !autoPlayTriggered) {
@@ -422,143 +315,6 @@ export function DetailsModal(props) {
     if (m?.media_type === 'tv' && !isPreview()) loadWatchedEpisodes();
   });
 
-  createEffect(() => {
-    const m = movie();
-    if (!m?.id) { setSimilarItems([]); return; }
-    const mediaType = m.media_type === 'tv' ? 'tv' : 'movie';
-    fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/recommendations?api_key=${TMDB_KEY}&language=en-US&page=1`)
-      .then(r => r.json())
-      .then(d => {
-        let results = (d.results || []).filter(x => x.poster_path).slice(0, 12);
-        if (results.length === 0) {
-          fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/similar?api_key=${TMDB_KEY}&language=en-US&page=1`)
-            .then(r => r.json())
-            .then(d2 => setSimilarItems((d2.results || []).filter(x => x.poster_path).slice(0, 12)))
-            .catch(() => setSimilarItems([]));
-        } else {
-          setSimilarItems(results);
-        }
-      })
-      .catch(() => setSimilarItems([]));
-  });
-
-  onMount(() => { document.body.style.overflow = 'hidden'; window.addEventListener('message', handlePlayerMessages); }); 
-  
-  onCleanup(() => { 
-      hydrateSessionProgressFromElapsed();
-      saveProgressToDb(); 
-      document.body.style.overflow = ''; 
-      window.removeEventListener('message', handlePlayerMessages); 
-  });
-  
-  const allAvailablePlatforms = createMemo(() => [...new Set((props.watchlist || []).flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort());
-
-  createEffect(() => { 
-      if(movie()) { 
-          if (!isPreview() && !props.isGuest) {
-              setForm({ 
-                status: movie().status||'Planned', 
-                rating: movie().rating||'', 
-                watchDate: typeof movie().watchDate==='string'?movie().watchDate:'', 
-                notes: typeof movie().notes==='string'?movie().notes:'', 
-                region: movie().region||'International', 
-                season: movie().season||1, 
-                episode: movie().episode||1, 
-                tag: movie().tag||'', 
-                platforms: getSafePlatforms(movie()).join(', '), 
-                genres: getSafeGenres(movie()).join(', '),
-                seasonDates: movie().seasonDates || {} 
-              });
-          }
-          
-          fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}?api_key=${TMDB_KEY}&append_to_response=videos,credits`).then(r=>r.json()).then(async d=>{
-              setDetails(d);
-              if (movie().media_type === 'tv' && !isPreview() && !props.isGuest) {
-                  const regularSeasons = (d.seasons || []).filter(s => Number(s.season_number) > 0);
-                  const latestSeason = regularSeasons.reduce((max, s) => Math.max(max, Number(s.season_number) || 0), 0);
-                  const previousKnown = Number(movie().latestTmdbSeason || movie().totalSeasons || 0);
-                  const hasNewSeason = previousKnown > 0 && latestSeason > previousKnown;
-                  if (latestSeason > 0 && latestSeason !== previousKnown) {
-                      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { latestTmdbSeason: latestSeason, newSeasonAvailable: hasNewSeason });
-                  }
-              }
-              const inferred = (d?.runtime || d?.episode_run_time?.[0] || 0) * 60;
-              if (inferred > 0) setContentDuration(inferred);
-              const v = d?.videos?.results; if(v){ let t = v.find(x=>x.site==='YouTube'&&x.type==='Trailer')||v.find(x=>x.site==='YouTube'&&x.type==='Teaser')||v.find(x=>x.site==='YouTube'); if(t) setTrailerKey(t.key); }
-              if (!isPreview() && !props.isGuest && d.genres && d.genres.length > 0) {
-                  const apiGenres = d.genres.map(g => g.name).join(', ');
-                  const dbGenres = getSafeGenres(movie()).join(', ');
-                  if (!dbGenres) setForm(f => ({ ...f, genres: apiGenres }));
-              }
-          });
-
-          const title = movie().title || movie().name;
-          fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_KEY}`).then(r=>r.json()).then(d=>{
-              if(d.Response === 'True') {
-                  const rt = d.Ratings?.find(r=>r.Source === 'Rotten Tomatoes')?.Value || '-';
-                  setOmdbData({ imdb: d.imdbRating || '-', rt: rt });
-                  if (!isPreview() && !props.isGuest) updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { imdbRating: d.imdbRating || '-', rtRating: rt.replace('%','') });
-              }
-          });
-
-          const fetchProviders = async () => {
-              const title = movie().title || movie().name;
-              const makeStoredProvider = (platform) => {
-                  const cleanP = cleanPlatform(platform);
-                  if (!cleanP) return null;
-                  const pData = getPlatformDict(title, cleanP);
-                  if (pData) return { name: pData.name, logo: pData.logo, url: pData.url, source: 'stored' };
-                  return { name: cleanP, isCss: true, color: getBrandColor(cleanP), url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}`, source: 'stored' };
-              };
-              const storedProviders = () => getSafePlatforms(movie()).map(makeStoredProvider).filter(Boolean);
-
-              try {
-                  const providerData = await Promise.race([
-                      fetchTmdbWatchProviders(movie().media_type, movie().id),
-                      new Promise(resolve => setTimeout(() => resolve(null), 3000))
-                  ]);
-                  const hasDisplayProviders = (region) => !!region && [region.flatrate, region.rent, region.buy].some(list => Array.isArray(list) && list.length > 0);
-                  const region = hasDisplayProviders(providerData?.results?.IN) ? providerData.results.IN : (hasDisplayProviders(providerData?.results?.US) ? providerData.results.US : null);
-                  const raw = region
-                    ? [...(region.flatrate || []), ...(region.rent || []), ...(region.buy || [])]
-                    : [];
-                  const seen = new Set();
-                  const tmdbProviders = raw
-                    .map(p => {
-                        const name = cleanPlatform(p.provider_name) || p.provider_name;
-                        if (!name || seen.has(name)) return null;
-                        seen.add(name);
-                        return {
-                            name,
-                            logo: p.logo_path ? `https://image.tmdb.org/t/p/original${p.logo_path}` : null,
-                            url: region?.link || `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(name)}`,
-                            source: 'tmdb'
-                        };
-                    })
-                    .filter(Boolean)
-                    .slice(0, 6);
-
-                  if (tmdbProviders.length > 0) {
-                      setRichPlatforms(tmdbProviders);
-                      if (!isPreview() && !props.isGuest) {
-                          const currentDbPlatforms = movie().platformsList || [];
-                          const fetchedNames = tmdbProviders.map(p => p.name);
-                          const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n));
-                          if(missingInDb.length > 0) {
-                              const mergedPlatforms = [...new Set([...currentDbPlatforms, ...fetchedNames])];
-                              await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: mergedPlatforms });
-                          }
-                      }
-                      return;
-                  }
-              } catch (e) {}
-
-              setRichPlatforms(storedProviders().slice(0, 6));
-          };
-          fetchProviders();
-      } 
-  });
-
   const togglePlatform = (p) => { let curr = form().platforms.split(',').map(s=>s.trim()).filter(Boolean); if(curr.includes(p)) curr = curr.filter(x=>x!==p); else curr.push(p); setForm({...form(), platforms: curr.join(', ')}); };
   
   const saveChanges = async () => { 
@@ -601,7 +357,7 @@ export function DetailsModal(props) {
       setPlayerStartProgress(0);
     }
 
-    await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), updates); 
+    await updateWatchlistItem(props.uid, movie().id, updates); 
     props.showToast("Saved"); 
     setIsEdit(false); 
   };
@@ -628,9 +384,7 @@ export function DetailsModal(props) {
       const castNames = details().credits?.cast?.slice(0, 5).map(c => c.name) || [];
       const director = details().credits?.crew?.find(c => c.job === 'Director')?.name || '';
       const castList = [...castNames, director].filter(Boolean);
-      await setDoc(doc(db, 'users', props.uid, 'watchlist', String(item.id)), {
-        id: String(item.id), title: item.title || item.name, media_type: item.media_type || 'movie', poster_path: item.poster_path, backdrop_path: item.backdrop_path, release_date: item.release_date || item.first_air_date || '', status: 'Planned', addedAt: new Date(), castList: castList
-      });
+      await addPreviewToWatchlist({ uid: props.uid, item, details: details() });
       props.showToast("Added to Vault! 🍿");
       props.onClose();
     } catch (err) {
@@ -684,13 +438,7 @@ export function DetailsModal(props) {
           <button onClick={props.onClose} class="absolute top-4 right-4 z-[100] bg-black/50 backdrop-blur-md border border-white/10 p-2.5 rounded-full hover:bg-black/80 active:scale-95 transition-all"><Icon name="close" class="text-sm text-white"/></button>
           
           <div class="overflow-y-auto hide-scrollbar w-full">
-              <div class="h-56 md:h-72 relative bg-black shrink-0">
-                <Show when={!playTrailer()} fallback={<iframe class="w-full h-full absolute inset-0 z-10" src={`https://www.youtube.com/embed/${trailerKey()}?autoplay=1&rel=0`} frameborder="0" allowfullscreen></iframe>}>
-                  <Show when={movie().backdrop_path} fallback={<div class="w-full h-full flex items-center justify-center text-gray-700 bg-[#171921]"><Icon name="movie" class="text-6xl"/></div>}><img src={`https://image.tmdb.org/t/p/original${movie().backdrop_path}`} class="w-full h-full object-cover opacity-60" /></Show>
-                  <div class="absolute inset-0 bg-gradient-to-t from-[#08090b]/90 via-[#08090b]/40 to-transparent pointer-events-none" />
-                  <Show when={trailerKey()}><button onClick={() => setPlayTrailer(true)} class="absolute inset-0 flex items-center justify-center z-10 group"><div class="w-16 h-16 bg-[var(--primary)]/30 backdrop-blur-md rounded-full flex items-center justify-center border border-[var(--primary)]/50 group-hover:scale-110 active:scale-95 transition-transform shadow-2xl"><Icon name="play_arrow" fill class="text-white text-4xl"/></div></button></Show>
-                </Show>
-              </div>
+              <DetailsHero movie={movie} playTrailer={playTrailer} setPlayTrailer={setPlayTrailer} trailerKey={trailerKey} />
 
               <div class="px-6 md:px-8 pb-28 -mt-16 relative z-10">
                 <div class="flex justify-between items-start mb-2">
@@ -713,20 +461,7 @@ export function DetailsModal(props) {
                     </Show>
                 </div>
                 
-                <div class="grid grid-cols-3 gap-2 my-5 w-full">
-                    <div class="bg-black/40 backdrop-blur-md border border-white/10 py-2 rounded-xl flex flex-col items-center justify-center text-center shadow-md">
-                        <div class="flex items-center gap-1 mb-0.5"><Icon name="star" fill class="text-[10px] text-[#f5c518]"/><span class="text-xs font-black text-white">{omdbData().imdb}</span></div>
-                        <span class="text-[7px] font-black text-gray-500 uppercase tracking-widest">IMDb</span>
-                    </div>
-                    <div class="bg-black/40 backdrop-blur-md border border-white/10 py-2 rounded-xl flex flex-col items-center justify-center text-center shadow-md">
-                        <div class="flex items-center gap-1 mb-0.5"><span class="text-[10px]">🍅</span><span class="text-xs font-black text-white">{omdbData().rt}</span></div>
-                        <span class="text-[7px] font-black text-gray-500 uppercase tracking-widest">RT</span>
-                    </div>
-                    <div class="bg-[var(--primary)]/10 backdrop-blur-md border border-[var(--primary)]/20 py-2 rounded-xl flex flex-col items-center justify-center text-center shadow-md">
-                        <div class="flex items-center gap-1 mb-0.5"><Icon name="person" fill class="text-[10px] text-[var(--primary)]"/><span class="text-xs font-black text-[var(--primary)]">{movie().rating ? `${movie().rating}/10` : '-'}</span></div>
-                        <span class="text-[7px] font-black text-[var(--primary)] uppercase tracking-widest opacity-70">Sage</span>
-                    </div>
-                </div>
+                <RatingsPanel movie={movie} omdbData={omdbData} />
 
                 <Show when={isEdit()} fallback={
                   <div class="animate-fade-in">
@@ -753,19 +488,7 @@ export function DetailsModal(props) {
                             e.preventDefault(); 
                             e.stopPropagation(); 
                             
-                            // Guarantee progress injection so it NEVER fails
-                            if (!movie().watchProgress || movie().watchProgress.currentTime === 0) {
-                                const inferred = inferDurationSeconds();
-                                if (inferred > 0) setContentDuration(inferred);
-                                setWatchProgress({ currentTime: 0, duration: inferred }); 
-                            } else {
-                                if (movie().watchProgress.duration) setContentDuration(movie().watchProgress.duration);
-                                setWatchProgress(movie().watchProgress);
-                            }
-                            
-                            setPlayerStartProgress(movie().watchProgress?.currentTime || 0);
-                            setReceivedRealProgress(false);
-                            setPlayerSessionStart(Date.now());
+                            primePlaybackProgress();
                             setShowPlayer(true); 
                         }}
                           class="w-full mt-3 font-black py-4 rounded-xl uppercase text-[11px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -936,27 +659,7 @@ export function DetailsModal(props) {
                         <Show when={!isPreview() && movieFranchises()}><SafeInfoRow icon="folder_special" label="Lists" value={<span class="text-xs font-bold text-white">{movieFranchises()}</span>} /></Show>
                         <Show when={!isPreview() && movie().notes && typeof movie().notes === 'string'}><div class="border-t border-white/5 pt-3 mt-3"><p class="text-[10px] uppercase font-black text-gray-500 tracking-widest mb-1 flex items-center gap-1"><Icon name="edit_note" class="text-[14px]"/> Notes</p><p class="text-sm text-gray-300 italic">"{movie().notes}"</p></div></Show>
 
-                        <Show when={similarItems().length > 0}>
-                          <div class="mb-8 mt-6">
-                            <h3 class="text-[10px] font-bold uppercase text-gray-500 tracking-widest mb-3 px-1 flex items-center gap-2">
-                              <Icon name="auto_awesome" class="text-[12px]" style="color: var(--p)"/> More Like This
-                            </h3>
-                            <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
-                              <For each={similarItems()}>{(item) => (
-                                <div 
-                                  onClick={() => {
-                                    setOverrideItem({ ...item, media_type: item.media_type || (movie().media_type === 'tv' ? 'tv' : 'movie') });
-                                    document.querySelector('.overflow-y-auto.hide-scrollbar.w-full')?.scrollTo({ top: 0, behavior: 'smooth' });
-                                  }}
-                                  class="min-w-[110px] w-[110px] shrink-0 cursor-pointer active:scale-95 transition-transform"
-                                >
-                                  <img src={`https://image.tmdb.org/t/p/w200${item.poster_path}`} class="w-full h-[160px] rounded-xl object-cover bg-[#171921] mb-2 border border-white/5" />
-                                  <p class="text-[10px] font-bold text-gray-200 line-clamp-2 leading-tight">{item.title || item.name}</p>
-                                </div>
-                              )}</For>
-                            </div>
-                          </div>
-                        </Show>
+                        <SimilarItems items={similarItems} onSelect={(item) => { setOverrideItem({ ...item, media_type: item.media_type || (movie().media_type === 'tv' ? 'tv' : 'movie') }); document.querySelector('.overflow-y-auto.hide-scrollbar.w-full')?.scrollTo({ top: 0, behavior: 'smooth' }); }} />
 
                         <Show when={!isPreview() && movie().media_type === 'tv' && movie().seasonDates && Object.keys(movie().seasonDates).some(k => movie().seasonDates[k].start || movie().seasonDates[k].end)}>
                             <div class="border-t border-white/5 pt-4 mt-2">
@@ -998,7 +701,7 @@ export function DetailsModal(props) {
                               if (props.onLogin) props.onLogin();
                               return;
                             }
-                            if(confirm("Permanently delete?")) { await deleteDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id))); props.showToast("Deleted"); props.onClose(); } 
+                            if(confirm("Permanently delete?")) { await deleteWatchlistItem(props.uid, movie().id); props.showToast("Deleted"); props.onClose(); } 
                           }} class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition-colors mx-auto active:scale-95"><Icon name="delete" class="text-sm"/> Remove from Universe</button></div>
                     </Show>
                   </div>

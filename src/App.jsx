@@ -17,6 +17,7 @@ import { SettingsModal } from './modals/Modals';
 import { MovieStreamModal } from './modals/MovieStreamModal';
 import { MovieStreamFAB } from './components/MovieStreamFAB';
 import VideoPlayer from './components/VideoPlayer';
+import { useModalState } from './hooks/useModalState';
 
 const NavBtn = (props) => (
   <button
@@ -57,16 +58,14 @@ export default function App() {  const [user, setUser] = createSignal(null);
   const [loading, setLoading] = createSignal(true);
   const [splashWait, setSplashWait] = createSignal(true);
   const [activeVaultStatus, setActiveVaultStatus] = createSignal('all');
-  const [searchModal, setSearchModal] = createSignal(false);
-  const [searchInitialQuery, setSearchInitialQuery] = createSignal('');
-  const [detailsId, setDetailsId] = createSignal(null);
-  const [previewSource, setPreviewSource] = createSignal(null);
-  const [settingsModal, setSettingsModal] = createSignal(false);
-  const [serverSettingsModal, setServerSettingsModal] = createSignal(false);
+  const {
+    searchModal, setSearchModal, searchInitialQuery, setSearchInitialQuery,
+    detailsId, setDetailsId, previewSource, setPreviewSource,
+    settingsModal, setSettingsModal, serverSettingsModal, setServerSettingsModal,
+    movieStreamModal, setMovieStreamModal, currentVideo, setCurrentVideo
+  } = useModalState();
   const [userMenuOpen, setUserMenuOpen] = createSignal(false);
   const [toast, setToast] = createSignal({ show: false, msg: '' });
-  const [movieStreamModal, setMovieStreamModal] = createSignal(false);
-  const [currentVideo, setCurrentVideo] = createSignal(null);
 
   const showToast = (msg) => {
     setToast({ show: true, msg });
