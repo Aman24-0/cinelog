@@ -1,62 +1,55 @@
 import { onMount, onCleanup } from "solid-js";
 
-import videojs from "video.js";
-import "video.js/dist/video-js.css";
-
 export function DirectPlayPlayer(props) {
   let videoRef;
-  let player;
+  let progressTimer;
 
   onMount(() => {
-    player = videojs(videoRef, {
-      controls: true,
-      autoplay: true,
-      responsive: true,
-      fluid: true,
-      preload: "auto",
-      playbackRates: [0.5, 1, 1.25, 1.5, 2],
-      controlBar: {
-        pictureInPictureToggle: true,
-      },
-      sources: [
-        {
-          src: props.src,
-          type: "video/mp4",
-        },
-      ],
-    });
+    if (!videoRef) return;
 
-    player.ready(() => {
+    const handleLoadedMetadata = () => {
       if (props.startTime > 0) {
-        player.currentTime(props.startTime);
+        videoRef.currentTime = props.startTime;
       }
-    });
+    };
 
-    player.on("timeupdate", () => {
-      if (!props.onProgress) return;
+    videoRef.addEventListener(
+      "loadedmetadata",
+      handleLoadedMetadata
+    );
 
-      props.onProgress({
-        currentTime: player.currentTime(),
-        duration: player.duration(),
-      });
-    });
+    progressTimer = setInterval(() => {
+      if (
+        props.onProgress &&
+        !videoRef.paused &&
+        !videoRef.ended
+      ) {
+        props.onProgress({
+          currentTime: videoRef.currentTime || 0,
+          duration: videoRef.duration || 0,
+        });
+      }
+    }, 3000);
   });
 
   onCleanup(() => {
-    if (player) {
-      player.dispose();
+    if (progressTimer) {
+      clearInterval(progressTimer);
     }
   });
 
   return (
-    <div class="w-full h-full bg-black">
-      <div data-vjs-player>
-        <video
-          ref={videoRef}
-          class="video-js vjs-big-play-centered"
-          playsinline
-        />
-      </div>
+    <div class="w-full h-full bg-black flex items-center justify-center">
+      <video
+        ref={videoRef}
+        src={props.src}
+        poster={props.poster}
+        controls
+        autoPlay
+        playsInline
+        preload="metadata"
+        class="w-full max-h-screen bg-black"
+      />
     </div>
   );
 }
