@@ -1,101 +1,93 @@
-import { createSignal, onCleanup } from 'solid-js';
-import { db } from '../firebase';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { updateWatchlistItem } from '../services/watchlistService';
 
-// ============================================
-// FIX #14: Debounce Utility (Prevents Race Conditions)
-// ============================================
-// Limits database writes to once every 2 seconds, preventing excessive Firebase usage
-function debounce(func, wait) {
-  let timeout;
-  return function executedFunction(...args) {
-    const later = () => {
-      clearTimeout(timeout);
-      func(...args);
-    };
-    clearTimeout(timeout);
-    timeout = setTimeout(later, wait);
-  };
-}
-
-export function useWatchProgress(userId, mediaId, mediaType = 'movie') {
-  const [currentTime, setCurrentTime] = createSignal(0);
-  const [duration, setDuration] = createSignal(0);
-  const [isSaving, setIsSaving] = createSignal(false);
-
-  // ============================================
-  // Save Progress to Firebase (Debounced)
-  // ============================================
-  const saveProgressToDb = debounce(async (time, totalDuration) => {
-    if (!userId || !mediaId) return;
-    
-    setIsSaving(true);
-    try {
-      const progressData = {
-        currentTime: time,
-        duration: totalDuration,
-        lastUpdated: serverTimestamp(),
-        mediaType: mediaType,
-        // Calculate percentage watched
-        percentWatched: totalDuration > 0 ? (time / totalDuration) * 100 : 0,
-        isCompleted: totalDuration > 0 && (time / totalDuration) >= 0.9 // Mark as completed at 90%
-      };
-
-      const docRef = doc(db, 'users', userId, 'watchProgress', `${mediaType}_${mediaId}`);
-      await setDoc(docRef, progressData, { merge: true });
-      
-      console.log(`✅ Progress saved for ${mediaType} ${mediaId}`);
-    } catch (error) {
-      console.error('❌ Error saving watch progress:', error.message);
-    } finally {
-      setIsSaving(false);
+export function useWatchProgress({
+  movie,
+  isPreview,
+  isGuest,
+  uid,
+  activeServer,
+  watchProgress,
+  setWatchProgress,
+  contentDuration,
+  setContentDuration,
+  playerSessionStart,
+  setPlayerSessionStart,
+  playerStartProgress,
+  setPlayerStartProgress,
+  receivedRealProgress,
+  setReceivedRealProgress,
+  currentSeasonNumber,
+  currentEpisodeNumber,
+  inferDurationSeconds,
+  showToast
+}) {
+  const primePlaybackProgress = () => {
+    if (!movie().watchProgress || movie().watchProgress.currentTime === 0) {
+      const inferred = inferDurationSeconds();
+      if (inferred > 0) setContentDuration(inferred);
+      setWatchProgress({ currentTime: 0, duration: inferred });
+    } else {
+      if (movie().watchProgress.duration) setContentDuration(movie().watchProgress.duration);
+      setWatchProgress(movie().watchProgress);
     }
-  }, 2000); // 2000ms = 2 seconds debounce delay
 
-  // ============================================
-  // Video Event Handlers
-  // ============================================
-  const handleTimeUpdate = (time, totalDuration) => {
-    setCurrentTime(time);
-    setDuration(totalDuration);
-    
-    // Trigger the debounced save
-    saveProgressToDb(time, totalDuration);
+    setPlayerStartProgress(movie().watchProgress?.currentTime || 0);
+    setReceivedRealProgress(false);
+    setPlayerSessionStart(Date.now());
   };
 
-  const handleVideoEnded = (totalDuration) => {
-    setCurrentTime(totalDuration);
-    // Force immediate save when video ends, bypassing debounce
-    saveProgressToDb.flush && saveProgressToDb.flush(); 
-    
-    // Fallback immediate save if flush isn't available
-    if (!userId || !mediaId) return;
-    setDoc(
-      doc(db, 'users', userId, 'watchProgress', `${mediaType}_${mediaId}`), 
-      {
-        currentTime: totalDuration,
-        duration: totalDuration,
-        percentWatched: 100,
-        isCompleted: true,
-        lastUpdated: serverTimestamp()
-      }, 
-      { merge: true }
-    );
+  const handlePlayerMessages = (event) => {
+    try {
+      if (event.data?.source?.includes('react-devtools')) return;
+      let msg = event.data;
+      if (typeof msg === 'string') msg = JSON.parse(msg);
+      const cTime = msg?.type === 'MEDIA_DATA' && msg?.data
+        ? (msg.data.currentTime || msg.data.time || 0)
+        : msg?.event === 'timeupdate'
+          ? msg.currentTime
+          : msg?.currentTime;
+      if (typeof cTime !== 'number' || cTime <= 0) return;
+      const dur = msg?.data?.duration || msg?.duration || contentDuration() || inferDurationSeconds() || 0;
+      if (dur > 0) setContentDuration(dur);
+      setReceivedRealProgress(true);
+      setWatchProgress({ currentTime: cTime, duration: dur });
+    } catch (e) {}
   };
 
-  // ============================================
-  // Cleanup
-  // ============================================
-  onCleanup(() => {
-    // Ensure any pending saves are cleared if component unmounts
-    setIsSaving(false);
-  });
-
-  return {
-    currentTime,
-    duration,
-    isSaving,
-    handleTimeUpdate,
-    handleVideoEnded
+  const hydrateSessionProgressFromElapsed = () => {
+    const startedAt = playerSessionStart();
+    if (!startedAt || receivedRealProgress()) return;
+    const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    if (elapsed < 60) return;
+    const base = Math.max(0, Number(playerStartProgress()) || 0);
+    const dur = contentDuration() || watchProgress()?.duration || inferDurationSeconds() || 0;
+    const next = dur > 0 ? Math.min(base + elapsed, dur) : base + elapsed;
+    if (next > base) setWatchProgress({ currentTime: next, duration: dur });
   };
+
+  const saveProgressToDb = async () => {
+    const prog = watchProgress();
+    if (prog && prog.currentTime > 0 && !isGuest && movie() && !isPreview()) {
+      try {
+        const updates = {
+          watchProgress: {
+            currentTime: prog.currentTime,
+            duration: prog.duration || contentDuration() || inferDurationSeconds() || 0,
+            server: activeServer(),
+            updatedAt: new Date().toISOString(),
+            season: currentSeasonNumber(),
+            episode: currentEpisodeNumber()
+          }
+        };
+        if (movie().status === 'Planned' || movie().status === 'Plan to Watch') updates.status = 'Watching';
+        await updateWatchlistItem(uid, movie().id, updates);
+        if (showToast) showToast('Progress Saved! 🍿');
+        setWatchProgress(null);
+      } catch (e) {
+        console.error('Error saving progress', e);
+      }
+    }
+  };
+
+  return { primePlaybackProgress, handlePlayerMessages, hydrateSessionProgressFromElapsed, saveProgressToDb };
 }
