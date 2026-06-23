@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, onMount, For, Show } from 'solid-js';
 import { Icon } from '../utils';
 import { MovieResultCard } from '../components/MovieResultCard';
 import { trpc } from '../lib/trpc';
@@ -10,11 +10,21 @@ export const MovieStreamModal = (props) => {
   const [loadingMovieId, setLoadingMovieId] = createSignal(null);
   const [searchError, setSearchError] = createSignal(null);
   
-  // New States for Stream List
+  // States for Stream List
   const [streamList, setStreamList] = createSignal([]);
   const [selectedMovie, setSelectedMovie] = createSignal(null);
+
+  // States for Direct Play Feature
+  const [directUrl, setDirectUrl] = createSignal('');
+  const [isEditingDirect, setIsEditingDirect] = createSignal(false);
   
   let searchTimeout;
+
+  // Load saved Direct URL when modal opens
+  onMount(() => {
+    const savedUrl = localStorage.getItem('cinelog_direct_url');
+    if (savedUrl) setDirectUrl(savedUrl);
+  });
 
   const handleSearch = (query) => {
     setSearchQuery(query);
@@ -45,7 +55,6 @@ export const MovieStreamModal = (props) => {
     setSearchError(null);
     
     try {
-      // ✅ UPDATED: Send TMDB ID directly. Backend will fetch IMDB ID.
       const result = await trpc.movies.scrapeVideoSource.mutate({
         tmdbId: movie.id,         type: 'movie'
       });
@@ -66,9 +75,25 @@ export const MovieStreamModal = (props) => {
   const handlePlayStream = (stream) => {
     props.onVideoFound({
       movieTitle: selectedMovie().title,
-      videoUrl: stream.magnet, // ✅ Uses 'magnet' key from Torrentio
+      videoUrl: stream.magnet,
       poster: selectedMovie().poster,
       source: 'torrentio',
+    });
+    setStreamList([]);
+    setSelectedMovie(null);
+    props.onClose();
+  };
+
+  const handlePlayDirect = () => {
+    if (!directUrl()) {
+      setIsEditingDirect(true); // If no URL saved, open edit mode
+      return;
+    }
+    props.onVideoFound({
+      movieTitle: selectedMovie()?.title || 'Direct Stream',
+      videoUrl: directUrl(), // Send the direct URL
+      poster: selectedMovie()?.poster,
+      source: 'direct_play',
     });
     setStreamList([]);
     setSelectedMovie(null);
@@ -167,6 +192,59 @@ export const MovieStreamModal = (props) => {
                       </div>
                     )}
                   </For>
+
+                  {/* 🚀 NEW: Direct Play Feature Section */}
+                  <div class="mt-2 pt-4 border-t border-white/10">
+                    <div class="bg-black/60 border border-blue-500/30 hover:border-blue-500/80 rounded-xl p-4 flex flex-col gap-3 transition-all">
+                      <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3 flex-1">
+                          <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                            <Icon name="dns" class="text-blue-400 text-lg" /> Direct Play
+                          </h4>
+                          <button 
+                            onClick={() => setIsEditingDirect(!isEditingDirect())} 
+                            class="p-1.5 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                            title="Edit URL"
+                          >
+                            <Icon name="edit" class="text-[15px]" />
+                          </button>
+                        </div>
+                        <button 
+                          onClick={handlePlayDirect} 
+                          class="shrink-0 w-12 h-12 bg-blue-500 text-white rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-[0_0_15px_rgba(59,130,246,0.5)]"
+                        >
+                          <Icon name="play_arrow" class="text-xl" />
+                        </button>
+                      </div>
+                      
+                      <Show when={isEditingDirect()}>
+                        <div class="flex items-center gap-2 mt-1">
+                          <input 
+                            type="text" 
+                            placeholder="Paste your video URL (.mp4, .m3u8)..." 
+                            value={directUrl()}
+                            onInput={(e) => setDirectUrl(e.target.value)}
+                            class="flex-1 bg-black/50 border border-white/10 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500"
+                          />
+                          <button 
+                            onClick={() => {
+                              localStorage.setItem('cinelog_direct_url', directUrl());
+                              setIsEditingDirect(false);
+                            }}
+                            class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-lg transition-colors"
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </Show>
+                      <Show when={!isEditingDirect() && directUrl()}>
+                        <div class="text-[10px] text-gray-500 truncate max-w-full">
+                          <span class="text-blue-400">URL:</span> {directUrl()}
+                        </div>
+                      </Show>
+                    </div>
+                  </div>
+
                 </div>
               </div>
             }>
