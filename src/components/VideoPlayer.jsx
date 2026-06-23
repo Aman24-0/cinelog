@@ -7,31 +7,17 @@ export default function VideoPlayer(props) {
   let player;
 
   onMount(() => {
-    // Check both videoUrl and magnetLink to be safe
-    const videoSource = props.videoUrl || props.magnetLink;
-    
-    if (!videoSource) {
-      console.error('❌ No video link provided to VideoPlayer');
+    if (!props.magnetLink) {
+      console.error('❌ No magnet link provided to VideoPlayer');
       return;
     }
 
-    let streamUrl = '';
-    let videoType = 'video/mp4';
+    // ✅ CRITICAL FIX: Construct the backend stream URL
+    // Replace with your actual Render backend URL if different
+    const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://cinelog-ultimate-backend.onrender.com'; 
+    const streamUrl = `${BACKEND_URL}/api/stream?magnet=${encodeURIComponent(props.magnetLink)}`;
 
-    // 🚀 Logic to separate Torrent from Direct URL
-    if (videoSource.startsWith('magnet:')) {
-      const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://cinelog-ultimate-backend.onrender.com'; 
-      streamUrl = `${BACKEND_URL}/api/stream?magnet=${encodeURIComponent(videoSource)}`;
-      console.log('🎬 Using Torrent Backend Stream:', streamUrl);
-    } else {
-      streamUrl = videoSource; // Direct URL
-      console.log('🎬 Using Direct Play URL:', streamUrl);
-      
-      // Auto-detect HLS (.m3u8) for direct play
-      if (streamUrl.includes('.m3u8')) {
-        videoType = 'application/x-mpegURL';
-      }
-    }
+    console.log('🎬 Using Backend Stream URL:', streamUrl);
 
     const videoElement = document.createElement('video-js');
     videoElement.classList.add('vjs-big-play-centered', 'vjs-theme-city');
@@ -45,7 +31,7 @@ export default function VideoPlayer(props) {
       preload: 'metadata',
       sources: [{
         src: streamUrl,
-        type: videoType, 
+        type: 'video/mp4', // We force MP4 as the backend streams it as such
       }],
       html5: {
         hls: {
@@ -85,9 +71,9 @@ export default function VideoPlayer(props) {
   return (
     <div class="w-full max-w-4xl mx-auto bg-black rounded-lg overflow-hidden shadow-2xl">
       <div ref={videoRef} class="w-full h-full" />
-      {!(props.videoUrl || props.magnetLink) && (
+      {!props.magnetLink && (
         <div class="p-8 text-center text-gray-400">
-          Select a video source to start streaming...
+          Select a torrent to start streaming...
         </div>
       )}
     </div>
