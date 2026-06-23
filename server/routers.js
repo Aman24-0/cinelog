@@ -1,225 +1,143 @@
-import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import axios from 'axios';
-import { TEMP_DIR, safeDeleteFile, handleStreamResponse } from './streamer.js';
-import path from 'path';
-import fs from 'fs';
+import { router, publicProcedure } from './trpc.js';
 
-// ============================================
-// 1. Environment & API Key Validation
-// ============================================
-const TMDB_API_KEY = process.env.TMDB_API_KEY || process.env.VITE_TMDB_API_KEY;
-
-if (!TMDB_API_KEY || TMDB_API_KEY === 'your_tmdb_api_key_here') {
-  console.error('❌ CRITICAL: TMDB API Key is missing or invalid. Please set TMDB_API_KEY in your .env file.');
-  // We don't exit here to allow the server to start, but API calls will fail gracefully.
-}
-
+const TMDB_API_KEY = process.env.TMDB_API_KEY || 'your_tmdb_api_key_here';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
-// ============================================
-// 2. LRU Cache Implementation (Fixes Memory Leak)
-// ============================================
-// Limits cache to 100 entries to prevent server memory exhaustion
-class LRUCache {
-  constructor(maxSize = 100) {
-    this.maxSize = maxSize;
-    this.cache = new Map();
-  }
+// In-memory cache to protect against rate limits (5 min TTL)
+const torrentCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000;
 
-  get(key) {
-    if (!this.cache.has(key)) return undefined;
-    const value = this.cache.get(key);
-    // Move to end (most recently used)
-    this.cache.delete(key);
-    this.cache.set(key, value);
-    return value;
-  }
-
-  set(key, value) {
-    if (this.cache.has(key)) {
-      this.cache.delete(key);
-    } else if (this.cache.size >= this.maxSize) {
-      // Evict oldest entry
-      const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
-    }
-    this.cache.set(key, value);
-  }
-}
-
-const torrentCache = new LRUCache(100);
-
-// ============================================
-// 3. tRPC Initialization
-// ============================================
-const t = initTRPC.create();
-
-export const appRouter = t.router({
-  // ==========================================
-  // Search Movies/TV Shows
-  // ==========================================
-  search: t.procedure
-    .input(z.object({ 
-      query: z.string().min(1, "Search query cannot be empty"),
-      type: z.enum(['movie', 'tv']).optional().default('movie') 
-    }))
-    .query(async ({ input }) => {
-      if (!TMDB_API_KEY) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'TMDB API Key is not configured on the server.',
-        });
-      }
-
-      try {
-        // Input sanitization: ensure query is properly encoded
-        const encodedQuery = encodeURIComponent(input.query.trim());
-        const endpoint = input.type === 'tv' ? 'search/tv' : 'search/movie';
-        
-        const response = await axios.get(`${TMDB_BASE_URL}/${endpoint}`, {
-          params: {
-            api_key: TMDB_API_KEY,
-            query: encodedQuery,
-            include_adult: false,
-          },
-        });
-
-        return {
-          results: response.data.results,
-          total_pages: response.data.total_pages,
-          total_results: response.data.total_results,
-        };
-      } catch (error) {
-        console.error('TMDB Search Error:', error.message);
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `Failed to fetch search results: ${error.message}`,
-        });
-      }
-    }),
-
-  // ==========================================
-  // Get Movie/TV Details
-  // ==========================================
-  details: t.procedure
-    .input(z.object({ 
-      id: z.number().int().positive(),
-      type: z.enum(['movie', 'tv']).optional().default('movie') 
-    }))
-    .query(async ({ input }) => {
-      if (!TMDB_API_KEY) {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: 'TMDB API Key is not configured on the server.',
-        });
-      }
-
-      try {
-        const response = await axios.get(`${TMDB_BASE_URL}/${input.type}/${input.id}`, {
-          params: {
-            api_key: TMDB_API_KEY,
-            append_to_response: 'credits,videos,images',
-          },
-        });
-        return response.data;
-      } catch (error) {
-        console.error('TMDB Details Error:', error.message);
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `Failed to fetch details: ${error.message}`,
-        });
-      }
-    }),
-
-  // ==========================================
-  // Scrape Video Source (with Proxy Fallback & Caching)
-  // ==========================================
-  scrapeVideo: t.procedure
-    .input(z.object({ 
-      query: z.string().min(1),
-      season: z.number().int().optional(),
-      episode: z.number().int().optional()
-    }))
-    .query(async ({ input }) => {
-      const cacheKey = `${input.query}-${input.season || ''}-${input.episode || ''}`;
+/**
+ * Search movies using TMDB API
+ */
+const searchMovies = publicProcedure
+  .input(z.object({ query: z.string().min(1) }))
+  .query(async ({ input }) => {
+    try {
+      const response = await fetch(
+        `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(input.query)}&page=1`
+      );
+      if (!response.ok) throw new Error(`TMDB API error: ${response.statusText}`);
       
-      // Check cache first
-      const cachedResult = torrentCache.get(cacheKey);
-      if (cachedResult) {
-        return { source: cachedResult, fromCache: true };
+      const data = await response.json();
+      const movies = (data.results || []).slice(0, 10).map(movie => ({
+        id: movie.id,
+        title: movie.title,
+        year: movie.release_date ? new Date(movie.release_date).getFullYear() : 'N/A',
+        poster: movie.poster_path ? `https://image.tmdb.org/t/p/w300${movie.poster_path}` : null,
+        overview: movie.overview || 'No overview available',
+        rating: movie.vote_average || 0,
+      }));
+
+      return { success: true, movies, total: data.total_results };
+    } catch (error) {
+      console.error('Error searching movies:', error);
+      return { success: false, movies: [], error: error.message };
+    }
+  });
+
+/**
+ * ✅ FIXED: Uses CORS Proxy to bypass Render IP blocking on Torrentio
+ */
+const scrapeVideoSource = publicProcedure
+  .input(z.object({
+    tmdbId: z.number(),
+    type: z.enum(['movie', 'series']).default('movie')
+  }))
+  .mutation(async ({ input }) => {
+    try {
+      // 1. Get IMDB ID from TMDB      console.log(`🔍 Fetching IMDB ID for TMDB ID: ${input.tmdbId}`);
+      const detailsRes = await fetch(
+        `${TMDB_BASE_URL}/movie/${input.tmdbId}?api_key=${TMDB_API_KEY}&append_to_response=external_ids`
+      );
+      
+      if (!detailsRes.ok) throw new Error('Failed to fetch movie details from TMDB');
+      const details = await detailsRes.json();
+      
+      const imdbId = details.external_ids?.imdb_id;
+      if (!imdbId) throw new Error('IMDB ID not found in TMDB external IDs');
+      
+      console.log(`✅ Found IMDB ID: ${imdbId}`);
+
+      // 2. Check cache first
+      const cacheKey = `${input.type}:${imdbId}`;
+      const cached = torrentCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        console.log(` Cache hit for ${cacheKey}`);
+        return cached.data;
       }
 
-      const proxies = [
-        `https://api.allorigins.win/raw?url=`,
-        `https://corsproxy.io/?`
+      // 3. Fetch streams via CORS Proxy to avoid IP blocks
+      const targetUrl = `https://torrentio.strem.fun/stream/${input.type}/${imdbId}.json`;
+      // Using allorigins.win as primary proxy, corsproxy.io as fallback
+      const proxyUrls = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+        `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`
       ];
 
-      let lastError = null;
-
-      for (const proxy of proxies) {
+      let lastError;
+      for (let attempt = 1; attempt <= proxyUrls.length; attempt++) {
         try {
-          // Sanitize and encode the target URL
-          const targetUrl = `https://example-torrent-api.com/search?query=${encodeURIComponent(input.query)}`;
-          const finalUrl = `${proxy}${encodeURIComponent(targetUrl)}`;
+          console.log(` Attempt ${attempt}: Fetching via proxy for ${imdbId}`);
+          const response = await fetch(proxyUrls[attempt - 1], {
+            signal: AbortSignal.timeout(15000) // 15s timeout
+          });
 
-          const response = await axios.get(finalUrl, { timeout: 10000 });
+          const text = await response.text();
           
-          // Mock parsing logic (replace with your actual scraping logic)
-          const data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
-          
-          if (data && data.magnet) {
-            // Store in LRU cache
-            torrentCache.set(cacheKey, data.magnet);
-            return { source: data.magnet, fromCache: false };
+          // Check if response is actually JSON (not HTML block page)
+          if (text.trim().startsWith('<')) {
+            throw new Error(`Proxy returned HTML instead of JSON (Attempt ${attempt})`);
           }
-        } catch (error) {
-          lastError = error;
-          console.warn(`⚠️ Proxy ${proxy} failed: ${error.message}`);
-          continue; // Try next proxy
+
+          const data = JSON.parse(text);
+          
+          // Handle empty results gracefully
+          if (!data.streams || data.streams.length === 0) {
+            console.log(`️ No streams found on Torrentio for ${imdbId}`);
+            return { success: true, sources: [], source: 'torrentio' };          }
+
+          // Transform streams
+          const streams = data.streams.map(stream => ({
+            title: stream.title.replace(/\s*\d+\s*️/g, '').trim(),
+            magnet: stream.url,
+            seeders: parseInt(stream.title.match(/👤\s*(\d+)/)?.[1] || '0'),
+            size: stream.title.match(/\s*([\d.]+\s*[A-Z]+)/)?.[1] || 'Unknown',
+            indexer: 'Torrentio'
+          })).filter(s => s.magnet && s.magnet.startsWith('magnet:'));
+
+          const result = {
+            success: true,
+            sources: streams,
+            source: 'torrentio'
+          };
+
+          // Store in cache
+          torrentCache.set(cacheKey, { data: result, timestamp: Date.now() });
+          
+          console.log(`✅ Found ${streams.length} streams via Torrentio (Proxy ${attempt})`);
+          return result;
+
+        } catch (err) {
+          lastError = err;
+          console.warn(`⚠️ Proxy attempt ${attempt} failed: ${err.message}`);
         }
       }
 
-      // If all proxies fail
-      throw new TRPCError({
-        code: 'SERVICE_UNAVAILABLE',
-        message: `Failed to scrape video source. All proxies failed. Last error: ${lastError?.message || 'Unknown error'}`,
-      });
-    }),
+      throw new Error(`All proxies failed: ${lastError.message}`);
 
-  // ==========================================
-  // Stream Video File (Handles Range Requests)
-  // ==========================================
-  stream: t.procedure
-    .input(z.object({ 
-      filePath: z.string().min(1) 
-    }))
-    .mutation(async ({ input, ctx }) => {
-      // Security: Prevent path traversal attacks
-      const safePath = path.resolve(input.filePath);
-      if (!safePath.startsWith(TEMP_DIR)) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Access denied: Invalid file path.',
-        });
-      }
+    } catch (error) {
+      console.error('Scrape failed:', error);
+      return { success: false, message: error.message };
+    }
+  });
 
-      if (!fs.existsSync(safePath)) {
-        throw new TRPCError({
-          code: 'NOT_FOUND',
-          message: 'Video file not found on server.',
-        });
-      }
-
-      // Note: In a real Express/tRPC setup, streaming requires direct access to req/res.
-      // This is a placeholder to show the integration with streamer.js.
-      // You would typically handle this via a custom Express route or pass req/res through context.
-      return { 
-        status: 'ready', 
-        message: 'Stream endpoint ready. Ensure req/res are passed via tRPC context for actual streaming.' 
-      };
-    }),
+export const appRouter = router({
+  movies: router({
+    search: searchMovies,
+    scrapeVideoSource,
+  }),
 });
 
-// Export the router type for TypeScript support
-export { appRouter };
+export {};
