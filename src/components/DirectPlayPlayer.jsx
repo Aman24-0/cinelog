@@ -1,12 +1,10 @@
-// src/components/DirectPlayPlayer.jsx
 import { onMount, onCleanup, Show } from "solid-js";
 
-// Vidstack CSS & Components (Yeh import zaroori hain UI ke liye)
 import "vidstack/player/styles/default/theme.css";
 import "vidstack/player/styles/default/layouts/video.css";
+
 import "vidstack/player";
 import "vidstack/player/layouts/default";
-import "vidstack/player/ui";
 
 export function DirectPlayPlayer(props) {
   let playerRef;
@@ -14,50 +12,71 @@ export function DirectPlayPlayer(props) {
   onMount(() => {
     if (!playerRef) return;
 
-    // 1. Resume from saved position
-    if (props.startTime > 0) {
-      playerRef.currentTime = props.startTime;
-    }
+    const handleTimeUpdate = () => {
+      if (!props.onProgress) return;
 
-    // 2. Save Progress (Continue Watching)
-    const handleTimeUpdate = (event) => {
-      if (props.onProgress) {
-        props.onProgress({
-          currentTime: event.detail.currentTime,
-          duration: playerRef.duration || event.detail.duration || 0,
-        });
+      props.onProgress({
+        currentTime: playerRef.currentTime || 0,
+        duration: playerRef.duration || 0,
+      });
+    };
+
+    const handleLoadedMetadata = () => {
+      if (props.startTime > 0) {
+        playerRef.currentTime = props.startTime;
       }
     };
 
-    playerRef.addEventListener("time-update", handleTimeUpdate);
+    playerRef.addEventListener(
+      "time-update",
+      handleTimeUpdate
+    );
+
+    playerRef.addEventListener(
+      "loaded-metadata",
+      handleLoadedMetadata
+    );
 
     onCleanup(() => {
-      playerRef.removeEventListener("time-update", handleTimeUpdate);
+      playerRef.removeEventListener(
+        "time-update",
+        handleTimeUpdate
+      );
+
+      playerRef.removeEventListener(
+        "loaded-metadata",
+        handleLoadedMetadata
+      );
     });
   });
 
   return (
-    <media-player
-      ref={playerRef}
-      class="w-full h-full bg-black text-white outline-none"
-      title={props.title}
-      src={props.src}
-      crossorigin="anonymous"
-      playsinline
-      autoplay
-    >
-      <media-provider>
-        <Show when={props.poster}>
-          <media-poster class="vds-poster object-cover" src={props.poster}></media-poster>
-        </Show>
-      </media-provider>
-      
-      {/* 🚀 Vidstack's Default Layout automatically includes:
-          - Double Tap to Seek (Left/Right)
-          - Long Press for 2x Speed
-          - Fullscreen & PiP controls
-          - Mobile optimized UI */}
-      <media-video-layout></media-video-layout>
-    </media-player>
+    <div class="w-full h-full bg-black">
+      <media-player
+        ref={playerRef}
+        title={props.title || "Video"}
+        playsinline
+        autoplay
+        class="w-full h-full"
+      >
+        <media-provider>
+          {/* MP4 Source */}
+          <source
+            src={props.src}
+            type="video/mp4"
+          />
+
+          <Show when={props.poster}>
+            <media-poster
+              src={props.poster}
+              class="vds-poster"
+            />
+          </Show>
+        </media-provider>
+
+        {/* Full Vidstack UI */}
+        <media-video-layout />
+      </media-player>
+    </div>
   );
 }
