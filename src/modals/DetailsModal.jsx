@@ -4,11 +4,13 @@ import { db } from '../firebase';
 import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY, fetchTmdbWatchProviders } from '../utils';
 import { PersonModal } from './PersonModal';
 
-// 🚀 VIDSTACK PREMIUM PLAYER IMPORTS FOR SOLID.JS 🚀
+// 🚀 VIDSTACK PREMIUM PLAYER IMPORTS 🚀
 import 'vidstack/player/styles/default/theme.css';
 import 'vidstack/player/styles/default/layouts/video.css';
+// Isse browser ko pata chalta hai ki <media-player> tag ka kya matlab hai
 import 'vidstack/player';
 import 'vidstack/player/layouts/default';
+import 'vidstack/player/ui'; // Yeh missing tha, iske bina UI components load nahi hote!
 
 const DEFAULT_SERVERS = [
   { id: 'vidzee', name: 'VidZee (Fast)', movieUrl: 'https://player.vidzee.wtf/embed/movie/{id}', tvUrl: 'https://player.vidzee.wtf/embed/tv/{id}/{season}/{episode}', icon: 'smart_display' },
@@ -1134,16 +1136,16 @@ export function DetailsModal(props) {
             </div>
           </div>
           
-          {/* 🚀 PLAYER AREA WITH PERFECT VIDSTACK FIX 🚀 */}
+                    {/* 🚀 PLAYER AREA WITH VIDSTACK FIX 🚀 */}
           <div class="flex-1 bg-black w-full h-full relative">
             <div class="absolute inset-0 flex flex-col gap-3 items-center justify-center pointer-events-none opacity-50"><Icon name="dns" class="text-[var(--primary)] text-4xl animate-pulse"/><p class="text-[10px] uppercase font-black tracking-widest text-[var(--primary)]">Connecting to Node...</p></div>
             
             <Show when={activeServer() === 'DIRECT_PLAY'} fallback={
               <iframe src={getStreamUrl(activeServer())} class="w-full h-full border-none relative z-10" allowfullscreen ></iframe>
             }>
-              {/* Vidstack Web Components without 'controls' attribute for default layout */}
+              {/* Vidstack Player properly integrated for SolidJS via Web Components */}
               <media-player 
-                class="w-full h-full relative z-10 outline-none bg-black" 
+                class="w-full h-full relative z-10 outline-none bg-black vds-video-layout" 
                 title={movie().title || movie().name} 
                 src={getStreamUrl(activeServer())} 
                 crossorigin="anonymous"
@@ -1151,6 +1153,7 @@ export function DetailsModal(props) {
                 autoplay
               >
                 <media-provider></media-provider>
+                {/* Official Web Component Default Layout tag */}
                 <media-video-layout></media-video-layout>
               </media-player>
             </Show>
