@@ -4,6 +4,12 @@ import { db } from '../firebase';
 import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY, fetchTmdbWatchProviders } from '../utils';
 import { PersonModal } from './PersonModal';
 
+// 🚀 VIDSTACK IMPORTS FOR PREMIUM PLAYER 🚀
+import 'vidstack/player/styles/default/theme.css';
+import 'vidstack/player/styles/default/layouts/video.css';
+import 'vidstack/player';
+import 'vidstack/player/layouts/default';
+
 const DEFAULT_SERVERS = [
   { id: 'vidzee', name: 'VidZee (Fast)', movieUrl: 'https://player.vidzee.wtf/embed/movie/{id}', tvUrl: 'https://player.vidzee.wtf/embed/tv/{id}/{season}/{episode}', icon: 'smart_display' },
   { id: 'vidlink', name: 'VidLink', movieUrl: 'https://vidlink.pro/movie/{id}?primaryColor=b1a1ff&autoplay=false', tvUrl: 'https://vidlink.pro/tv/{id}/{season}/{episode}?primaryColor=b1a1ff&autoplay=false', icon: 'play_circle' },
@@ -86,7 +92,7 @@ export function DetailsModal(props) {
   const [omdbData, setOmdbData] = createSignal({ imdb: '-', rt: '-' });
   const [form, setForm] = createSignal({ status: '', rating: '', watchDate: '', notes: '', region: '', season: 1, episode: 1, tag: '', platforms: '', genres: '', seasonDates: {} });
   
-  // 🚀 NEW STATES FOR DIRECT PLAY 🚀
+  // DIRECT PLAY STATES
   const [directPlayUrl, setDirectPlayUrl] = createSignal(localStorage.getItem('cinelog_direct_play_url') || '');
   const [isEditingDirectUrl, setIsEditingDirectUrl] = createSignal(false);
 
@@ -1129,14 +1135,25 @@ export function DetailsModal(props) {
             </div>
           </div>
           
-          {/* PLAYER AREA WITH VIDEO TAG FIX */}
+          {/* 🚀 PLAYER AREA WITH VIDSTACK FIX 🚀 */}
           <div class="flex-1 bg-black w-full h-full relative">
             <div class="absolute inset-0 flex flex-col gap-3 items-center justify-center pointer-events-none opacity-50"><Icon name="dns" class="text-[var(--primary)] text-4xl animate-pulse"/><p class="text-[10px] uppercase font-black tracking-widest text-[var(--primary)]">Connecting to Node...</p></div>
             
             <Show when={activeServer() === 'DIRECT_PLAY'} fallback={
               <iframe src={getStreamUrl(activeServer())} class="w-full h-full border-none relative z-10" allowfullscreen ></iframe>
             }>
-              <video src={getStreamUrl(activeServer())} controls autoplay playsinline class="w-full h-full relative z-10 outline-none bg-black"></video>
+              {/* Vidstack Web Components Setup for Solid.js */}
+              <media-player 
+                class="w-full h-full relative z-10 outline-none bg-black" 
+                title={movie().title || movie().name} 
+                src={getStreamUrl(activeServer())} 
+                crossOrigin 
+                playsInline 
+                autoPlay
+              >
+                <media-provider></media-provider>
+                <media-video-layout></media-video-layout>
+              </media-player>
             </Show>
           </div>
 
