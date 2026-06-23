@@ -21,7 +21,8 @@
     "superjson": "^1.13.1",
     "torrent-stream": "^1.2.1",
     "video.js": "^8.23.7",
-    "zod": "^3.22.4"
+    "zod": "^3.22.4",
+    "vidstack": "^1.11.1"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.19",
