@@ -12,7 +12,6 @@ import Dashboard from './views/Dashboard.jsx';
 import Analytics from './views/Analytics.jsx';
 import FranchisesView from './views/FranchisesView.jsx';
 import UpcomingView from './views/UpcomingView.jsx';
-import AIRecommend from './views/AIRecommend.jsx'; // Or modals/AIRecommend.jsx
 import SearchModal from './modals/SearchModal.jsx';
 import DetailsModal from './modals/DetailsModal.jsx';
 import MovieStreamModal from './modals/MovieStreamModal.jsx';
@@ -117,7 +116,6 @@ export default function App() {
                 <Route path="/analytics" component={Analytics} />
                 <Route path="/franchises" component={FranchisesView} />
                 <Route path="/upcoming" component={UpcomingView} />
-                <Route path="/ai" component={AIRecommend} />
                 <Route path="*all" component={() => <Navigate href="/" />} />
               </Routes>
             </main>
