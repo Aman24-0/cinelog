@@ -102,11 +102,13 @@ export function Vault(props) {
     }).length
   );
 
+  // FIX: Use watchDate or fallback to endDate/startDate for completed items
   const timelineItems = createMemo(() =>
     filtered().filter((m) => {
       if (m.status !== 'Completed') return false;
-      if (!m.watchDate) return false;
-      const watchTime = new Date(m.watchDate).getTime();
+      const date = m.watchDate || m.endDate || m.startDate || m.addedAt;
+      if (!date) return false;
+      const watchTime = new Date(date).getTime();
       return !isNaN(watchTime);
     })
   );
@@ -118,7 +120,7 @@ export function Vault(props) {
     let currentGroup = null;
 
     list.forEach(m => {
-      const dateObj = new Date(m.watchDate);
+      const dateObj = new Date(m.watchDate || m.endDate || m.startDate || m.addedAt);
       const monthYear = isNaN(dateObj.getTime()) ? 'Unknown Date' : dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
       if (!currentGroup || currentGroup.label !== monthYear) {
@@ -239,8 +241,8 @@ export function Vault(props) {
                 <div class="space-y-4">
                   <For each={group.items}>
                     {(m) => {
-                      const theDate = new Date(m.watchDate);
-                      const day = theDate && !isNaN(theDate) ? theDate.getDate() : '--';
+                      const dateObj = new Date(m.watchDate || m.endDate || m.startDate || m.addedAt);
+                      const day = dateObj && !isNaN(dateObj) ? dateObj.getDate() : '--';
                       
                       return (
                         <div class="relative flex items-center group cursor-pointer pl-10 pr-2" onClick={() => props.openMovie(m.id)}>
@@ -303,7 +305,7 @@ export function Vault(props) {
       <Show when={viewMode() === 'timeline' && filtered().length > 0 && timelineItems().length === 0}>
         <div class="text-center p-12" style="color: var(--muted)">
           <Icon name="event_busy" class="text-5xl mb-3" />
-          <p class="font-semibold text-sm">Timeline only shows completed titles with a valid Watch Date.</p>
+          <p class="font-semibold text-sm">Timeline only shows completed titles with a valid Watch Date (or End Date).</p>
         </div>
       </Show>
 
