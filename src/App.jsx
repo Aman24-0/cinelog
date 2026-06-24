@@ -14,9 +14,6 @@ import { DetailsModal } from './modals/DetailsModal';
 import { SearchModal } from './modals/SearchModal';
 import { ServerSettingsModal } from './modals/ServerSettingsModal';
 import { SettingsModal } from './modals/Modals';
-import { MovieStreamModal } from './modals/MovieStreamModal';
-import { MovieStreamFAB } from './components/MovieStreamFAB';
-import VideoPlayer from './components/VideoPlayer';
 import { useModalState } from './hooks/useModalState';
 
 const NavBtn = (props) => (
@@ -48,7 +45,8 @@ const GuestPrompt = (props) => (
   </div>
 );
 
-export default function App() {  const [user, setUser] = createSignal(null);
+export default function App() {
+  const [user, setUser] = createSignal(null);
   const [watchlist, setWatchlist] = createSignal([]);
   const [franchises, setFranchises] = createSignal([]);
   const [view, setView] = createSignal('dashboard');
@@ -58,12 +56,13 @@ export default function App() {  const [user, setUser] = createSignal(null);
   const [loading, setLoading] = createSignal(true);
   const [splashWait, setSplashWait] = createSignal(true);
   const [activeVaultStatus, setActiveVaultStatus] = createSignal('all');
+  
   const {
     searchModal, setSearchModal, searchInitialQuery, setSearchInitialQuery,
     detailsId, setDetailsId, previewSource, setPreviewSource,
-    settingsModal, setSettingsModal, serverSettingsModal, setServerSettingsModal,
-    movieStreamModal, setMovieStreamModal, currentVideo, setCurrentVideo
+    settingsModal, setSettingsModal, serverSettingsModal, setServerSettingsModal
   } = useModalState();
+  
   const [userMenuOpen, setUserMenuOpen] = createSignal(false);
   const [toast, setToast] = createSignal({ show: false, msg: '' });
 
@@ -96,6 +95,7 @@ export default function App() {  const [user, setUser] = createSignal(null);
       }
     });
   });
+
   const nukeCollection = async () => {
     if (!user()) return;
     if (!confirm("This will permanently delete your entire Vault. Are you sure?")) return;
@@ -138,25 +138,17 @@ export default function App() {  const [user, setUser] = createSignal(null);
           <header class="sticky top-0 z-50 flex justify-between items-center px-6 py-4 border-b"
             style="background: rgba(5,6,10,0.8); backdrop-filter: blur(24px); border-color: var(--border)">
             
-            {/* Logo & Mobile Stream Button Container */}
+            {/* Logo Container */}
             <div class="flex items-center gap-3">
               <div class="flex items-center gap-2">
                 <div class="w-8 h-8 rounded-xl flex items-center justify-center"
                   style="background: var(--p-dim); border: 1px solid var(--border-active)">
                   <Icon name="movie_filter" fill class="text-sm" style="color: var(--p)" />
-                </div>                <h2 class="font-headline text-2xl text-white leading-none">
+                </div>
+                <h2 class="font-headline text-2xl text-white leading-none">
                   CINE<span style="color: var(--p)">LOG</span>
                 </h2>
               </div>
-
-              {/* ✅ NEW: Mobile Stream Button (Visible ONLY on mobile) */}
-              <button 
-                onClick={() => setMovieStreamModal(true)}
-                class="flex sm:hidden ml-2 p-2 rounded-full bg-white/5 hover:bg-white/10 active:scale-95 transition-all border border-white/10"
-                aria-label="Stream Movies"
-              >
-                <Icon name="play_circle" class="text-xl text-[var(--p)]" />
-              </button>
             </div>
 
             {/* Header Controls */}
@@ -193,7 +185,8 @@ export default function App() {  const [user, setUser] = createSignal(null);
                       <button onClick={() => { setView('analytics'); setUserMenuOpen(false); }}
                         class="w-full text-left px-5 py-3 text-sm font-semibold flex items-center gap-3 hover:bg-white/5 transition-colors"
                         style="color: var(--p)">
-                        <Icon name="bar_chart" class="text-[18px]" /> Insights                      </button>
+                        <Icon name="bar_chart" class="text-[18px]" /> Insights
+                      </button>
                       <div class="my-1" style="border-top: 1px solid var(--border)" />
                       <button onClick={() => { setServerSettingsModal(true); setUserMenuOpen(false); }}
                         class="w-full text-left px-5 py-3 text-sm font-semibold flex items-center gap-3 hover:bg-white/5 transition-colors text-gray-300">
@@ -242,7 +235,8 @@ export default function App() {  const [user, setUser] = createSignal(null);
             </Show>
             <Show when={view() === 'sync'}>
               <Show when={user()} fallback={<GuestPrompt onLogin={handleLogin} />}>
-                <DataSync watchlist={watchlist} uid={user().uid} showToast={showToast} />              </Show>
+                <DataSync watchlist={watchlist} uid={user().uid} showToast={showToast} />
+              </Show>
             </Show>
           </main>
 
@@ -268,13 +262,6 @@ export default function App() {  const [user, setUser] = createSignal(null);
           </div>
 
           {/* ── MODALS ── */}
-          <Show when={movieStreamModal()}>
-            <MovieStreamModal
-              isOpen={movieStreamModal()}
-              onClose={() => setMovieStreamModal(false)}
-              onVideoFound={(video) => setCurrentVideo(video)}
-            />
-          </Show>
           <Show when={searchModal()}>
             <SearchModal
               onClose={() => { setSearchModal(false); setSearchInitialQuery(''); }}
@@ -291,7 +278,8 @@ export default function App() {  const [user, setUser] = createSignal(null);
             />
           </Show>
           <Show when={detailsId()}>
-            <DetailsModal              id={detailsId()}
+            <DetailsModal
+              id={detailsId()}
               watchlist={watchlist()}
               franchises={franchises()}
               onClose={() => {
@@ -316,31 +304,9 @@ export default function App() {  const [user, setUser] = createSignal(null);
             />
           </Show>
 
-          {/* ─ FLOATING ACTION BUTTONS ── */}
-          <MovieStreamFAB onClick={() => setMovieStreamModal(true)} />
-
-          {/* ── VIDEO PLAYER OVERLAY ── */}
-          <Show when={currentVideo()}>
-            <div class="fixed inset-0 z-[99998] bg-black/95 backdrop-blur-lg flex flex-col items-center justify-center p-4 overflow-auto">
-              <button
-                onClick={() => setCurrentVideo(null)}
-                class="absolute top-6 right-6 p-3 rounded-full hover:bg-white/10 transition-colors active:scale-95 z-[100001]"
-              >
-                <Icon name="close" class="text-2xl text-white" />
-              </button>
-              <div class="w-full max-w-5xl">
-                <VideoPlayer
-                  videoUrl={currentVideo().videoUrl}
-                  movieTitle={currentVideo().movieTitle}
-                  poster={currentVideo().poster}
-                  source={currentVideo().source}
-                />
-              </div>
-            </div>
-          </Show>
-
           {/* ── TOAST ── */}
-          <Show when={toast().show}>            <div class="fixed bottom-28 left-1/2 -translate-x-1/2 glass-surface px-6 py-3 rounded-full shadow-2xl z-[999999] flex gap-2 items-center text-sm font-bold whitespace-nowrap animate-pop-in"
+          <Show when={toast().show}>
+            <div class="fixed bottom-28 left-1/2 -translate-x-1/2 glass-surface px-6 py-3 rounded-full shadow-2xl z-[999999] flex gap-2 items-center text-sm font-bold whitespace-nowrap animate-pop-in"
               style="border-color: var(--p); color: var(--text)">
               <Icon name="check_circle" fill style="color: var(--p)" /> {toast().msg}
             </div>
