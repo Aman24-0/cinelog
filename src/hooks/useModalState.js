@@ -7,8 +7,6 @@ export function useModalState() {
   const [previewSource, setPreviewSource] = createSignal(null);
   const [settingsModal, setSettingsModal] = createSignal(false);
   const [serverSettingsModal, setServerSettingsModal] = createSignal(false);
-  const [movieStreamModal, setMovieStreamModal] = createSignal(false);
-  const [currentVideo, setCurrentVideo] = createSignal(null);
 
   const openSearch = (query = '') => {
     setSearchInitialQuery(query);
@@ -28,7 +26,6 @@ export function useModalState() {
   return {
     searchModal, setSearchModal, searchInitialQuery, setSearchInitialQuery, openSearch,
     detailsId, setDetailsId, previewSource, setPreviewSource, openPreview, closeDetails,
-    settingsModal, setSettingsModal, serverSettingsModal, setServerSettingsModal,
-    movieStreamModal, setMovieStreamModal, currentVideo, setCurrentVideo
+    settingsModal, setSettingsModal, serverSettingsModal, setServerSettingsModal
   };
 }
