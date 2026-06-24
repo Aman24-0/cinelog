@@ -1,4 +1,3 @@
-// src/views/Dashboard.jsx
 import { createMemo, createSignal, createEffect, For, Show } from 'solid-js';
 import { Icon } from '../utils';
 import { MovieCard } from '../components/MovieCard';
@@ -20,8 +19,11 @@ export function Dashboard(props) {
       .sort((a, b) => new Date(b.watchProgress.updatedAt).getTime() - new Date(a.watchProgress.updatedAt).getTime());
   });
 
-  // Calculate planned items and manage random selection state
+  // Calculate stats for the dashboard grid
   const plannedList = createMemo(() => props.watchlist().filter(m => m.status === 'Planned' || m.status === 'Plan to Watch'));
+  const watchingCount = createMemo(() => props.watchlist().filter(m => m.status === 'Watching').length);
+  const completedCount = createMemo(() => props.watchlist().filter(m => m.status === 'Completed').length);
+  
   const [randomItem, setRandomItem] = createSignal(null);
 
   const pickRandom = () => {
@@ -65,7 +67,6 @@ export function Dashboard(props) {
         </div>
       }>
         {(item) => {
-          // Fix: Made bgImg a reactive function so it updates when 'item' changes
           const bgImg = () => item().backdrop_path ? `https://image.tmdb.org/t/p/w780${item().backdrop_path}` : (item().poster_path ? `https://image.tmdb.org/t/p/w500${item().poster_path}` : '');
           
           return (
@@ -121,6 +122,51 @@ export function Dashboard(props) {
           <button onClick={props.onLogin} class="px-6 py-3 rounded-full font-bold text-black text-[10px] uppercase tracking-widest active:scale-95 transition-all relative z-10" style="background: var(--p);">
             Start Building Vault
           </button>
+        </div>
+      </Show>
+
+      {/* ── VAULT STATS DASHBOARD ── */}
+      <Show when={!props.isGuest && props.watchlist().length > 0}>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4 mt-6">
+          {/* Total Titles */}
+          <div 
+            onClick={() => { props.setActiveVaultStatus('all'); props.setView('watchlist'); }}
+            class="bg-[#141414] border border-white/5 rounded-[1.25rem] p-4 flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-all hover:bg-[#1a1a1a] hover:border-white/10 group shadow-sm"
+          >
+            <Icon name="inventory_2" class="text-gray-600 group-hover:text-white transition-colors mb-2 text-xl" />
+            <span class="font-headline text-3xl text-white leading-none mb-1">{props.watchlist().length}</span>
+            <span class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Total Vault</span>
+          </div>
+
+          {/* Watching */}
+          <div 
+            onClick={() => { props.setActiveVaultStatus('Watching'); props.setView('watchlist'); }}
+            class="bg-[#141414] border border-white/5 rounded-[1.25rem] p-4 flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-all hover:bg-[#1a1a1a] hover:border-white/10 group shadow-sm"
+          >
+            <Icon name="play_circle" class="text-gray-600 group-hover:text-white transition-colors mb-2 text-xl" />
+            <span class="font-headline text-3xl text-white leading-none mb-1">{watchingCount()}</span>
+            <span class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Watching</span>
+          </div>
+
+          {/* Planned */}
+          <div 
+            onClick={() => { props.setActiveVaultStatus('Planned'); props.setView('watchlist'); }}
+            class="bg-[#141414] border border-white/5 rounded-[1.25rem] p-4 flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-all hover:bg-[#1a1a1a] hover:border-white/10 group shadow-sm"
+          >
+            <Icon name="bookmark" class="text-gray-600 group-hover:text-[var(--p)] transition-colors mb-2 text-xl" />
+            <span class="font-headline text-3xl text-[var(--p)] leading-none mb-1 drop-shadow-lg">{plannedList().length}</span>
+            <span class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Planned</span>
+          </div>
+
+          {/* Completed */}
+          <div 
+            onClick={() => { props.setActiveVaultStatus('Completed'); props.setView('watchlist'); }}
+            class="bg-[#141414] border border-white/5 rounded-[1.25rem] p-4 flex flex-col items-center justify-center cursor-pointer active:scale-95 transition-all hover:bg-[#1a1a1a] hover:border-white/10 group shadow-sm"
+          >
+            <Icon name="task_alt" class="text-gray-600 group-hover:text-white transition-colors mb-2 text-xl" />
+            <span class="font-headline text-3xl text-white leading-none mb-1">{completedCount()}</span>
+            <span class="text-[9px] font-bold text-gray-500 uppercase tracking-widest">Completed</span>
+          </div>
         </div>
       </Show>
 
