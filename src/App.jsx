@@ -208,6 +208,7 @@ export default function App() {
           <div class="hidden lg:flex fixed top-0 left-0 h-screen w-64 bg-black border-r border-white/10 z-40 flex-col pt-24 px-6 gap-2">
             <NavBtn icon="dashboard" label="Home" active={view() === 'dashboard'} onClick={() => setView('dashboard')} />
             <NavBtn icon="visibility" label="Vault" active={view() === 'watchlist'} onClick={() => setView('watchlist')} />
+            <NavBtn icon="search" label="Search" active={searchModal()} onClick={() => { setSearchInitialQuery(''); setSearchModal(true); }} />
             <NavBtn icon="folder_special" label="Lists" active={view() === 'franchises'} onClick={() => setView('franchises')} />
             <NavBtn icon="calendar_month" label="Upcoming" active={view() === 'upcoming'} onClick={() => setView('upcoming')} />
           </div>
@@ -216,6 +217,7 @@ export default function App() {
           <nav class="fixed bottom-0 left-0 w-full z-50 flex lg:hidden bottom-nav-bar h-16">
             <NavBtn icon="dashboard" label="Home" active={view() === 'dashboard'} onClick={() => setView('dashboard')} />
             <NavBtn icon="visibility" label="Vault" active={view() === 'watchlist'} onClick={() => setView('watchlist')} />
+            <NavBtn icon="search" label="Search" active={searchModal()} onClick={() => { setSearchInitialQuery(''); setSearchModal(true); }} />
             <NavBtn icon="folder_special" label="Lists" active={view() === 'franchises'} onClick={() => setView('franchises')} />
             <NavBtn icon="calendar_month" label="Upcoming" active={view() === 'upcoming'} onClick={() => setView('upcoming')} />
           </nav>
