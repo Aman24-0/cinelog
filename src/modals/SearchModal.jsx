@@ -178,9 +178,10 @@ export function SearchModal(props) {
   };
 
   return (
-    <div class="fixed inset-0 p-4 pt-16 sm:pt-24 z-[999999] flex justify-center items-center animate-fade-in" style="background: rgba(0,0,0,0.92)" onClick={props.onClose}>
-      <div class="w-full max-w-2xl mx-auto rounded-[1.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.7)] overflow-hidden flex flex-col max-h-[75vh] animate-pop-in" style="background:#111; border: 1px solid rgba(255,255,255,0.1);" onClick={e => e.stopPropagation()}>
-
+    // Changed: `items-center` -> `items-start` and adjusted top padding (`pt-20 sm:pt-24`)
+    <div class="fixed inset-0 p-4 pt-20 sm:pt-24 z-[999999] flex justify-center items-start animate-fade-in" style="background: rgba(0,0,0,0.92)" onClick={props.onClose}>
+      <div class="search-modal w-full max-w-2xl mx-auto rounded-[1.5rem] overflow-hidden flex flex-col max-h-[75vh]" style="background:#111; border: 1px solid rgba(255,255,255,0.1);" onClick={e => e.stopPropagation()}>
+        
         {/* Search Input */}
         <div class="p-5 lg:p-8 border-b border-white/5 flex gap-4 items-center bg-transparent">
           <Icon name="search" class="text-[var(--p)] text-2xl"/>
