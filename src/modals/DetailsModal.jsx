@@ -1,11 +1,19 @@
-import { createSignal, createEffect, createMemo, onMount, onCleanup, For, Show } from 'solid-js';
+import { createSignal, createEffect, createMemo, onMount, onCleanup, Show, For } from 'solid-js';
 import { collection, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Icon, formatRuntime, cleanPlatform, getSafeGenres, getSafePlatforms, SafeInfoRow, TMDB_KEY, OMDB_KEY, fetchTmdbWatchProviders } from '../utils';
-import { PersonModal } from './PersonModal';
+import { Icon, cleanPlatform, getSafeGenres, getSafePlatforms, TMDB_KEY, OMDB_KEY, fetchTmdbWatchProviders } from '../utils';
 
-// 🚀 Naya Player Component Import Kiya 🚀
+import { PersonModal } from './PersonModal';
 import { DirectPlayPlayer } from '../components/DirectPlayPlayer';
+
+// Modular UI Components
+import { MediaHeader } from '../components/details/MediaHeader';
+import { RatingsPanel } from '../components/details/RatingsPanel';
+import { StreamingPanel } from '../components/details/StreamingPanel';
+import { TvTracker } from '../components/details/TvTracker';
+import { CastCrewList } from '../components/details/CastCrewList';
+import { InfoGrid } from '../components/details/InfoGrid';
+import { EditForm } from '../components/details/EditForm';
 
 const DEFAULT_SERVERS = [
   { id: 'vidzee', name: 'VidZee (Fast)', movieUrl: 'https://player.vidzee.wtf/embed/movie/{id}', tvUrl: 'https://player.vidzee.wtf/embed/tv/{id}/{season}/{episode}', icon: 'smart_display' },
@@ -67,7 +75,6 @@ const calculateDays = (start, end) => {
 export function DetailsModal(props) {
   const isPreview = createMemo(() => typeof props.id === 'string' && props.id.startsWith('PREVIEW_'));
   const isResume = createMemo(() => typeof props.id === 'string' && props.id.startsWith('RESUME_'));
-  
   const previewData = createMemo(() => { if (!isPreview()) return null; try { return JSON.parse(props.id.replace('PREVIEW_', '')); } catch(e) { return null; } });
   
   const baseId = createMemo(() => {
@@ -108,7 +115,6 @@ export function DetailsModal(props) {
   const [watchedEpisodes, setWatchedEpisodes] = createSignal({});
   let autoPlayTriggered = false;
 
-
   const inferDurationSeconds = () => {
     const d = details();
     const mins = d?.runtime || d?.episode_run_time?.[0] || movie()?.runtime || 0;
@@ -117,11 +123,7 @@ export function DetailsModal(props) {
     return movie()?.media_type === 'tv' ? 45 * 60 : 120 * 60;
   };
 
-  const tvSeasons = createMemo(() => (details().seasons || [])
-    .filter(s => Number(s.season_number) > 0)
-    .sort((a, b) => Number(a.season_number) - Number(b.season_number)));
-
-  const selectedSeasonData = createMemo(() => tvSeasons().find(s => Number(s.season_number) === Number(selectedSeason())));
+  const tvSeasons = createMemo(() => (details().seasons || []).filter(s => Number(s.season_number) > 0).sort((a, b) => Number(a.season_number) - Number(b.season_number)));
   const selectedSeasonEpisodes = createMemo(() => seasonEpisodes()[selectedSeason()]?.episodes || []);
   const currentSeasonNumber = createMemo(() => parseInt(form().season || movie()?.season || 1) || 1);
   const currentEpisodeNumber = createMemo(() => parseInt(form().episode || movie()?.episode || 1) || 1);
@@ -133,7 +135,6 @@ export function DetailsModal(props) {
     const currentSeasonEpisodes = getEpisodesForSeason(season);
     const nextInSeason = currentSeasonEpisodes.find(ep => Number(ep.episode_number) > Number(episode));
     if (nextInSeason) return { season: Number(season), episode: Number(nextInSeason.episode_number) };
-
     const nextSeason = tvSeasons().find(s => Number(s.season_number) > Number(season));
     if (!nextSeason) return null;
     const nextSeasonNumber = Number(nextSeason.season_number);
@@ -149,22 +150,14 @@ export function DetailsModal(props) {
   
   const seasonCacheKey = () => `tmdb_${movie()?.id}_seasons`;
   const cacheIsFresh = (cache) => cache?.timestamp && (Date.now() - cache.timestamp < 24 * 60 * 60 * 1000);
-
-  const getStoredSeasonCache = () => {
-    try { return JSON.parse(localStorage.getItem(seasonCacheKey()) || '{}'); } catch (e) { return {}; }
-  };
-
-  const writeStoredSeasonCache = (cache) => {
-    try { localStorage.setItem(seasonCacheKey(), JSON.stringify(cache)); } catch (e) {}
-  };
+  const getStoredSeasonCache = () => { try { return JSON.parse(localStorage.getItem(seasonCacheKey()) || '{}'); } catch (e) { return {}; } };
+  const writeStoredSeasonCache = (cache) => { try { localStorage.setItem(seasonCacheKey(), JSON.stringify(cache)); } catch (e) {} };
 
   const loadWatchedEpisodes = async () => {
     if (props.isGuest || !props.uid || isPreview() || movie()?.media_type !== 'tv') return;
     try {
       const snap = await getDocs(collection(db, 'users', props.uid, 'watchlist', String(movie().id), 'episodes'));
-      const next = {};
-      snap.docs.forEach(d => { next[d.id] = d.data(); });
-      setWatchedEpisodes(next);
+      const next = {}; snap.docs.forEach(d => { next[d.id] = d.data(); }); setWatchedEpisodes(next);
     } catch (e) {}
   };
 
@@ -172,85 +165,44 @@ export function DetailsModal(props) {
     if (!movie()?.id || movie()?.media_type !== 'tv' || !seasonNumber) return;
     const cache = getStoredSeasonCache();
     const cachedSeason = cache?.seasons?.[seasonNumber];
-    if (!forceRefresh && cacheIsFresh(cache) && cachedSeason) {
-      setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: cachedSeason }));
-      return;
-    }
-
+    if (!forceRefresh && cacheIsFresh(cache) && cachedSeason) { setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: cachedSeason })); return; }
     setSeasonsLoading(true);
     try {
       const res = await fetch(`https://api.themoviedb.org/3/tv/${movie().id}/season/${seasonNumber}?api_key=${TMDB_KEY}`);
       if (!res.ok) throw new Error('season fetch failed');
       const season = await res.json();
-      const nextCache = {
-        timestamp: Date.now(),
-        seasons: { ...(cache.seasons || {}), [seasonNumber]: season }
-      };
+      const nextCache = { timestamp: Date.now(), seasons: { ...(cache.seasons || {}), [seasonNumber]: season } };
       writeStoredSeasonCache(nextCache);
       setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: season }));
     } catch (e) {
       if (cachedSeason) setSeasonEpisodes(prev => ({ ...prev, [seasonNumber]: cachedSeason }));
-    } finally {
-      setSeasonsLoading(false);
-    }
+    } finally { setSeasonsLoading(false); }
   };
 
   const updateCurrentEpisodePointer = async (nextPointer, completed = false) => {
     const nextSeason = Number(nextPointer?.season || currentSeasonNumber());
     const nextEpisode = Number(nextPointer?.episode || currentEpisodeNumber());
     const nextStatus = completed ? 'Completed' : (movie()?.status === 'Planned' || movie()?.status === 'Plan to Watch' || movie()?.status === 'Completed' ? 'Watching' : (movie()?.status || 'Watching'));
-    const nextProgress = {
-      currentTime: 0,
-      duration: inferDurationSeconds() || 0,
-      server: activeServer() || null,
-      updatedAt: new Date().toISOString(),
-      season: nextSeason,
-      episode: nextEpisode
-    };
-
+    const nextProgress = { currentTime: 0, duration: inferDurationSeconds() || 0, server: activeServer() || null, updatedAt: new Date().toISOString(), season: nextSeason, episode: nextEpisode };
     setForm(prev => ({ ...prev, season: nextSeason, episode: nextEpisode, status: nextStatus }));
-    setWatchProgress(nextProgress);
-    setPlayerStartProgress(0);
-
+    setWatchProgress(nextProgress); setPlayerStartProgress(0);
     if (!props.isGuest && props.uid && movie() && !isPreview()) {
-      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), {
-        season: nextSeason,
-        episode: nextEpisode,
-        status: nextStatus,
-        watchProgress: nextProgress
-      });
+      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { season: nextSeason, episode: nextEpisode, status: nextStatus, watchProgress: nextProgress });
     }
   };
 
   const toggleEpisodeWatched = async (ep) => {
-    if (props.isGuest) {
-      props.showToast("Sign in to track episodes! 🔒");
-      if (props.onLogin) props.onLogin();
-      return;
-    }
+    if (props.isGuest) { props.showToast("Sign in to track episodes! 🔒"); if (props.onLogin) props.onLogin(); return; }
     if (!props.uid || !movie() || !ep) return;
-
     const season = Number(ep.season_number || selectedSeason() || currentSeasonNumber());
     const episode = Number(ep.episode_number || 1);
     const id = episodeDocId(season, episode);
     const isWatched = !!watchedEpisodes()[id]?.watched;
     const nextWatched = !isWatched;
-    const payload = {
-      watched: nextWatched,
-      season,
-      episode,
-      episodeId: id,
-      title: ep.name || '',
-      airDate: ep.air_date || '',
-      runtime: ep.runtime || null,
-      updatedAt: new Date().toISOString()
-    };
-
+    const payload = { watched: nextWatched, season, episode, episodeId: id, title: ep.name || '', airDate: ep.air_date || '', runtime: ep.runtime || null, updatedAt: new Date().toISOString() };
     setWatchedEpisodes(prev => ({ ...prev, [id]: payload }));
-
     try {
       await setDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id), 'episodes', id), payload, { merge: true });
-
       if (nextWatched) {
         const nextPointer = findNextEpisodePointer(season, episode);
         await updateCurrentEpisodePointer(nextPointer || { season, episode }, !nextPointer);
@@ -268,60 +220,30 @@ export function DetailsModal(props) {
   };
 
   const availableServers = createMemo(() => {
-    const custom = customServers();
-    const merged = [];
-    DEFAULT_SERVERS.forEach(s => {
-      const overrides = custom[s.id];
-      if (!overrides || overrides.enabled !== false) {
-        merged.push({ ...s, name: overrides?.name || s.name, movieUrl: overrides?.movieUrl || s.tvUrl, tvUrl: overrides?.tvUrl || s.tvUrl });
-      }
-    });
-    Object.keys(custom).forEach(key => {
-      if (!DEFAULT_SERVERS.find(s => s.id === key) && custom[key].enabled !== false) {
-        merged.push({ id: key, name: custom[key].name || 'Custom Server', movieUrl: custom[key].movieUrl || '', tvUrl: custom[key].tvUrl || '', icon: 'add_link' });
-      }
-    });
+    const custom = customServers(); const merged = [];
+    DEFAULT_SERVERS.forEach(s => { const overrides = custom[s.id]; if (!overrides || overrides.enabled !== false) { merged.push({ ...s, name: overrides?.name || s.name, movieUrl: overrides?.movieUrl || s.tvUrl, tvUrl: overrides?.tvUrl || s.tvUrl }); } });
+    Object.keys(custom).forEach(key => { if (!DEFAULT_SERVERS.find(s => s.id === key) && custom[key].enabled !== false) { merged.push({ id: key, name: custom[key].name || 'Custom Server', movieUrl: custom[key].movieUrl || '', tvUrl: custom[key].tvUrl || '', icon: 'add_link' }); } });
     return merged;
   });
 
   createEffect(() => {
     const serversList = availableServers();
-    if (serversList.length > 0 && !serversList.find(s => s.id === activeServer()) && activeServer() !== 'DIRECT_PLAY') {
-      setActiveServer(serversList[0].id);
-    }
+    if (serversList.length > 0 && !serversList.find(s => s.id === activeServer()) && activeServer() !== 'DIRECT_PLAY') { setActiveServer(serversList[0].id); }
   });
   
   const handlePlayerMessages = (event) => {
     try {
         if (event.data?.source?.includes('react-devtools')) return; 
-        
-        let msg = event.data;
-        if (typeof msg === 'string') msg = JSON.parse(msg);
-
+        let msg = event.data; if (typeof msg === 'string') msg = JSON.parse(msg);
         if (msg?.type === 'MEDIA_DATA' && msg?.data) {
-            const cTime = msg.data.currentTime || msg.data.time || 0;
-            const dur = msg.data.duration || contentDuration() || inferDurationSeconds() || 0;
-            if (cTime > 0) {
-              if (dur > 0) setContentDuration(dur);
-              setReceivedRealProgress(true);
-              setWatchProgress({ currentTime: cTime, duration: dur }); 
-            }
-        }
-        else if (msg?.event === 'timeupdate' && msg?.currentTime) {
+            const cTime = msg.data.currentTime || msg.data.time || 0; const dur = msg.data.duration || contentDuration() || inferDurationSeconds() || 0;
+            if (cTime > 0) { if (dur > 0) setContentDuration(dur); setReceivedRealProgress(true); setWatchProgress({ currentTime: cTime, duration: dur }); }
+        } else if (msg?.event === 'timeupdate' && msg?.currentTime) {
             const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
-            if (msg.currentTime > 0) {
-              if (dur > 0) setContentDuration(dur);
-              setReceivedRealProgress(true);
-              setWatchProgress({ currentTime: msg.currentTime, duration: dur });
-            }
-        }
-        else if (msg?.currentTime !== undefined && typeof msg.currentTime === 'number') {
+            if (msg.currentTime > 0) { if (dur > 0) setContentDuration(dur); setReceivedRealProgress(true); setWatchProgress({ currentTime: msg.currentTime, duration: dur }); }
+        } else if (msg?.currentTime !== undefined && typeof msg.currentTime === 'number') {
             const dur = msg.duration || contentDuration() || inferDurationSeconds() || 0;
-            if (msg.currentTime > 0) {
-              if (dur > 0) setContentDuration(dur);
-              setReceivedRealProgress(true);
-              setWatchProgress({ currentTime: msg.currentTime, duration: dur });
-            }
+            if (msg.currentTime > 0) { if (dur > 0) setContentDuration(dur); setReceivedRealProgress(true); setWatchProgress({ currentTime: msg.currentTime, duration: dur }); }
         }
     } catch (e) {}
   };
@@ -330,44 +252,22 @@ export function DetailsModal(props) {
       const prog = watchProgress();
       if (prog && prog.currentTime > 0 && !props.isGuest && movie() && !isPreview()) {
           try {
-              const updates = {
-                  watchProgress: {
-                      currentTime: prog.currentTime,
-                      duration: prog.duration || contentDuration() || inferDurationSeconds() || 0,
-                      server: activeServer(),
-                      updatedAt: new Date().toISOString(),
-                      season: currentSeasonNumber(),
-                      episode: currentEpisodeNumber()
-                  }
-              };
-              
-              if (movie().status === 'Planned' || movie().status === 'Plan to Watch') {
-                  updates.status = 'Watching';
-              }
-              
+              const updates = { watchProgress: { currentTime: prog.currentTime, duration: prog.duration || contentDuration() || inferDurationSeconds() || 0, server: activeServer(), updatedAt: new Date().toISOString(), season: currentSeasonNumber(), episode: currentEpisodeNumber() } };
+              if (movie().status === 'Planned' || movie().status === 'Plan to Watch') updates.status = 'Watching';
               await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), updates);
-              if(props.showToast) props.showToast("Progress Saved! 🍿");
-              
-              setWatchProgress(null); 
-          } catch (e) { 
-              console.error("Error saving progress", e); 
-          }
+              if(props.showToast) props.showToast("Progress Saved! 🍿"); setWatchProgress(null); 
+          } catch (e) {}
       }
   };
 
   const hydrateSessionProgressFromElapsed = () => {
-    const startedAt = playerSessionStart();
-    if (!startedAt) return;
-    if (receivedRealProgress()) return; 
+    const startedAt = playerSessionStart(); if (!startedAt || receivedRealProgress()) return; 
     const elapsed = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
-    const MIN_SESSION_SECONDS = 60;
-    if (elapsed < MIN_SESSION_SECONDS) return; 
+    if (elapsed < 60) return; 
     const base = Math.max(0, Number(playerStartProgress()) || 0);
     const dur = contentDuration() || watchProgress()?.duration || inferDurationSeconds() || 0;
     const next = dur > 0 ? Math.min(base + elapsed, dur) : base + elapsed;
-    if (next > base) {
-      setWatchProgress({ currentTime: next, duration: dur });
-    }
+    if (next > base) setWatchProgress({ currentTime: next, duration: dur });
   };
 
   createEffect(() => {
@@ -376,187 +276,68 @@ export function DetailsModal(props) {
           if (serversList.length > 0) {
               autoPlayTriggered = true;
               const savedServer = movie().watchProgress?.server;
-              if (savedServer && (serversList.find(s => s.id === savedServer) || savedServer === 'DIRECT_PLAY')) {
-                  setActiveServer(savedServer);
-              }
+              if (savedServer && (serversList.find(s => s.id === savedServer) || savedServer === 'DIRECT_PLAY')) setActiveServer(savedServer);
               setTimeout(() => {
-                  if (movie().watchProgress) {
-                      if (movie().watchProgress.duration) setContentDuration(movie().watchProgress.duration);
-                      setWatchProgress(movie().watchProgress);
-                  } else {
-                      const inferred = inferDurationSeconds();
-                      if (inferred > 0) setContentDuration(inferred);
-                      setWatchProgress({ currentTime: 0, duration: inferred });
-                  }
-                  setPlayerStartProgress(movie().watchProgress?.currentTime || 0);
-                  setReceivedRealProgress(false);
-                  setPlayerSessionStart(Date.now());
-                  setShowPlayer(true);
+                  if (movie().watchProgress) { if (movie().watchProgress.duration) setContentDuration(movie().watchProgress.duration); setWatchProgress(movie().watchProgress); } 
+                  else { const inferred = inferDurationSeconds(); if (inferred > 0) setContentDuration(inferred); setWatchProgress({ currentTime: 0, duration: inferred }); }
+                  setPlayerStartProgress(movie().watchProgress?.currentTime || 0); setReceivedRealProgress(false); setPlayerSessionStart(Date.now()); setShowPlayer(true);
               }, 200);
           }
       }
   });
 
-  onMount(async () => {
-    if (!props.isGuest) {
-      try {
-        const userDoc = await getDoc(doc(db, 'users', props.uid || 'unknown'));
-        const customSettings = userDoc.data()?.customServers || {};
-        setCustomServers(customSettings);
-      } catch (e) {}
-    }
-  });
-
+  onMount(async () => { if (!props.isGuest) { try { const userDoc = await getDoc(doc(db, 'users', props.uid || 'unknown')); setCustomServers(userDoc.data()?.customServers || {}); } catch (e) {} } });
+  createEffect(() => { if (movie()?.media_type !== 'tv') return; const seasons = tvSeasons(); if (!seasons.length) return; const preferred = Number(movie().season || seasons[0].season_number || 1); const exists = seasons.some(s => Number(s.season_number) === preferred); if (!selectedSeason()) setSelectedSeason(exists ? preferred : Number(seasons[0].season_number)); });
+  createEffect(() => { const seasonNumber = selectedSeason(); if (movie()?.media_type === 'tv' && seasonNumber) fetchSeasonEpisodes(seasonNumber); });
+  createEffect(() => { const m = movie(); if (m?.media_type === 'tv' && !isPreview()) loadWatchedEpisodes(); });
+  
   createEffect(() => {
-    if (movie()?.media_type !== 'tv') return;
-    const seasons = tvSeasons();
-    if (!seasons.length) return;
-    const preferred = Number(movie().season || seasons[0].season_number || 1);
-    const exists = seasons.some(s => Number(s.season_number) === preferred);
-    if (!selectedSeason()) setSelectedSeason(exists ? preferred : Number(seasons[0].season_number));
-  });
-
-  createEffect(() => {
-    const seasonNumber = selectedSeason();
-    if (movie()?.media_type === 'tv' && seasonNumber) fetchSeasonEpisodes(seasonNumber);
-  });
-
-  createEffect(() => {
-    const m = movie();
-    if (m?.media_type === 'tv' && !isPreview()) loadWatchedEpisodes();
-  });
-
-  createEffect(() => {
-    const m = movie();
-    if (!m?.id) { setSimilarItems([]); return; }
+    const m = movie(); if (!m?.id) { setSimilarItems([]); return; }
     const mediaType = m.media_type === 'tv' ? 'tv' : 'movie';
-    fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/recommendations?api_key=${TMDB_KEY}&language=en-US&page=1`)
-      .then(r => r.json())
-      .then(d => {
+    fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/recommendations?api_key=${TMDB_KEY}&language=en-US&page=1`).then(r => r.json()).then(d => {
         let results = (d.results || []).filter(x => x.poster_path).slice(0, 12);
-        if (results.length === 0) {
-          fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/similar?api_key=${TMDB_KEY}&language=en-US&page=1`)
-            .then(r => r.json())
-            .then(d2 => setSimilarItems((d2.results || []).filter(x => x.poster_path).slice(0, 12)))
-            .catch(() => setSimilarItems([]));
-        } else {
-          setSimilarItems(results);
-        }
-      })
-      .catch(() => setSimilarItems([]));
+        if (results.length === 0) fetch(`https://api.themoviedb.org/3/${mediaType}/${m.id}/similar?api_key=${TMDB_KEY}&language=en-US&page=1`).then(r => r.json()).then(d2 => setSimilarItems((d2.results || []).filter(x => x.poster_path).slice(0, 12))).catch(() => setSimilarItems([]));
+        else setSimilarItems(results);
+    }).catch(() => setSimilarItems([]));
   });
 
   onMount(() => { document.body.style.overflow = 'hidden'; window.addEventListener('message', handlePlayerMessages); }); 
-  
-  onCleanup(() => { 
-      hydrateSessionProgressFromElapsed();
-      saveProgressToDb(); 
-      document.body.style.overflow = ''; 
-      window.removeEventListener('message', handlePlayerMessages); 
-  });
+  onCleanup(() => { hydrateSessionProgressFromElapsed(); saveProgressToDb(); document.body.style.overflow = ''; window.removeEventListener('message', handlePlayerMessages); });
   
   const allAvailablePlatforms = createMemo(() => [...new Set((props.watchlist || []).flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort());
 
   createEffect(() => { 
       if(movie()) { 
           if (!isPreview() && !props.isGuest) {
-              setForm({ 
-                status: movie().status||'Planned', 
-                rating: movie().rating||'', 
-                watchDate: typeof movie().watchDate==='string'?movie().watchDate:'', 
-                notes: typeof movie().notes==='string'?movie().notes:'', 
-                region: movie().region||'International', 
-                season: movie().season||1, 
-                episode: movie().episode||1, 
-                tag: movie().tag||'', 
-                platforms: getSafePlatforms(movie()).join(', '), 
-                genres: getSafeGenres(movie()).join(', '),
-                seasonDates: movie().seasonDates || {} 
-              });
+              setForm({ status: movie().status||'Planned', rating: movie().rating||'', watchDate: typeof movie().watchDate==='string'?movie().watchDate:'', notes: typeof movie().notes==='string'?movie().notes:'', region: movie().region||'International', season: movie().season||1, episode: movie().episode||1, tag: movie().tag||'', platforms: getSafePlatforms(movie()).join(', '), genres: getSafeGenres(movie()).join(', '), seasonDates: movie().seasonDates || {} });
           }
-          
           fetch(`https://api.themoviedb.org/3/${movie().media_type||'movie'}/${movie().id}?api_key=${TMDB_KEY}&append_to_response=videos,credits`).then(r=>r.json()).then(async d=>{
               setDetails(d);
               if (movie().media_type === 'tv' && !isPreview() && !props.isGuest) {
-                  const regularSeasons = (d.seasons || []).filter(s => Number(s.season_number) > 0);
-                  const latestSeason = regularSeasons.reduce((max, s) => Math.max(max, Number(s.season_number) || 0), 0);
-                  const previousKnown = Number(movie().latestTmdbSeason || movie().totalSeasons || 0);
-                  const hasNewSeason = previousKnown > 0 && latestSeason > previousKnown;
-                  if (latestSeason > 0 && latestSeason !== previousKnown) {
-                      await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { latestTmdbSeason: latestSeason, newSeasonAvailable: hasNewSeason });
-                  }
+                  const regularSeasons = (d.seasons || []).filter(s => Number(s.season_number) > 0); const latestSeason = regularSeasons.reduce((max, s) => Math.max(max, Number(s.season_number) || 0), 0); const previousKnown = Number(movie().latestTmdbSeason || movie().totalSeasons || 0); const hasNewSeason = previousKnown > 0 && latestSeason > previousKnown;
+                  if (latestSeason > 0 && latestSeason !== previousKnown) await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { latestTmdbSeason: latestSeason, newSeasonAvailable: hasNewSeason });
               }
-              const inferred = (d?.runtime || d?.episode_run_time?.[0] || 0) * 60;
-              if (inferred > 0) setContentDuration(inferred);
+              const inferred = (d?.runtime || d?.episode_run_time?.[0] || 0) * 60; if (inferred > 0) setContentDuration(inferred);
               const v = d?.videos?.results; if(v){ let t = v.find(x=>x.site==='YouTube'&&x.type==='Trailer')||v.find(x=>x.site==='YouTube'&&x.type==='Teaser')||v.find(x=>x.site==='YouTube'); if(t) setTrailerKey(t.key); }
-              if (!isPreview() && !props.isGuest && d.genres && d.genres.length > 0) {
-                  const apiGenres = d.genres.map(g => g.name).join(', ');
-                  const dbGenres = getSafeGenres(movie()).join(', ');
-                  if (!dbGenres) setForm(f => ({ ...f, genres: apiGenres }));
-              }
+              if (!isPreview() && !props.isGuest && d.genres && d.genres.length > 0) { const apiGenres = d.genres.map(g => g.name).join(', '); const dbGenres = getSafeGenres(movie()).join(', '); if (!dbGenres) setForm(f => ({ ...f, genres: apiGenres })); }
           });
-
           const title = movie().title || movie().name;
           fetch(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${OMDB_KEY}`).then(r=>r.json()).then(d=>{
-              if(d.Response === 'True') {
-                  const rt = d.Ratings?.find(r=>r.Source === 'Rotten Tomatoes')?.Value || '-';
-                  setOmdbData({ imdb: d.imdbRating || '-', rt: rt });
-                  if (!isPreview() && !props.isGuest) updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { imdbRating: d.imdbRating || '-', rtRating: rt.replace('%','') });
-              }
+              if(d.Response === 'True') { const rt = d.Ratings?.find(r=>r.Source === 'Rotten Tomatoes')?.Value || '-'; setOmdbData({ imdb: d.imdbRating || '-', rt: rt }); if (!isPreview() && !props.isGuest) updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { imdbRating: d.imdbRating || '-', rtRating: rt.replace('%','') }); }
           });
-
           const fetchProviders = async () => {
               const title = movie().title || movie().name;
-              const makeStoredProvider = (platform) => {
-                  const cleanP = cleanPlatform(platform);
-                  if (!cleanP) return null;
-                  const pData = getPlatformDict(title, cleanP);
-                  if (pData) return { name: pData.name, logo: pData.logo, url: pData.url, source: 'stored' };
-                  return { name: cleanP, isCss: true, color: getBrandColor(cleanP), url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}`, source: 'stored' };
-              };
+              const makeStoredProvider = (platform) => { const cleanP = cleanPlatform(platform); if (!cleanP) return null; const pData = getPlatformDict(title, cleanP); if (pData) return { name: pData.name, logo: pData.logo, url: pData.url, source: 'stored' }; return { name: cleanP, isCss: true, color: getBrandColor(cleanP), url: `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(cleanP)}`, source: 'stored' }; };
               const storedProviders = () => getSafePlatforms(movie()).map(makeStoredProvider).filter(Boolean);
-
               try {
-                  const providerData = await Promise.race([
-                      fetchTmdbWatchProviders(movie().media_type, movie().id),
-                      new Promise(resolve => setTimeout(() => resolve(null), 3000))
-                  ]);
+                  const providerData = await Promise.race([ fetchTmdbWatchProviders(movie().media_type, movie().id), new Promise(resolve => setTimeout(() => resolve(null), 3000)) ]);
                   const hasDisplayProviders = (region) => !!region && [region.flatrate, region.rent, region.buy].some(list => Array.isArray(list) && list.length > 0);
                   const region = hasDisplayProviders(providerData?.results?.IN) ? providerData.results.IN : (hasDisplayProviders(providerData?.results?.US) ? providerData.results.US : null);
-                  const raw = region
-                    ? [...(region.flatrate || []), ...(region.rent || []), ...(region.buy || [])]
-                    : [];
+                  const raw = region ? [...(region.flatrate || []), ...(region.rent || []), ...(region.buy || [])] : [];
                   const seen = new Set();
-                  const tmdbProviders = raw
-                    .map(p => {
-                        const name = cleanPlatform(p.provider_name) || p.provider_name;
-                        if (!name || seen.has(name)) return null;
-                        seen.add(name);
-                        return {
-                            name,
-                            logo: p.logo_path ? `https://image.tmdb.org/t/p/original${p.logo_path}` : null,
-                            url: region?.link || `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(name)}`,
-                            source: 'tmdb'
-                        };
-                    })
-                    .filter(Boolean)
-                    .slice(0, 6);
-
-                  if (tmdbProviders.length > 0) {
-                      setRichPlatforms(tmdbProviders);
-                      if (!isPreview() && !props.isGuest) {
-                          const currentDbPlatforms = movie().platformsList || [];
-                          const fetchedNames = tmdbProviders.map(p => p.name);
-                          const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n));
-                          if(missingInDb.length > 0) {
-                              const mergedPlatforms = [...new Set([...currentDbPlatforms, ...fetchedNames])];
-                              await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: mergedPlatforms });
-                          }
-                      }
-                      return;
-                  }
+                  const tmdbProviders = raw.map(p => { const name = cleanPlatform(p.provider_name) || p.provider_name; if (!name || seen.has(name)) return null; seen.add(name); return { name, logo: p.logo_path ? `https://image.tmdb.org/t/p/original${p.logo_path}` : null, url: region?.link || `https://www.google.com/search?q=Watch+${encodeURIComponent(title)}+on+${encodeURIComponent(name)}`, source: 'tmdb' }; }).filter(Boolean).slice(0, 6);
+                  if (tmdbProviders.length > 0) { setRichPlatforms(tmdbProviders); if (!isPreview() && !props.isGuest) { const currentDbPlatforms = movie().platformsList || []; const fetchedNames = tmdbProviders.map(p => p.name); const missingInDb = fetchedNames.filter(n => !currentDbPlatforms.includes(n)); if(missingInDb.length > 0) { const mergedPlatforms = [...new Set([...currentDbPlatforms, ...fetchedNames])]; await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), { platformsList: mergedPlatforms }); } } return; }
               } catch (e) {}
-
               setRichPlatforms(storedProviders().slice(0, 6));
           };
           fetchProviders();
@@ -564,580 +345,126 @@ export function DetailsModal(props) {
   });
 
   const togglePlatform = (p) => { let curr = form().platforms.split(',').map(s=>s.trim()).filter(Boolean); if(curr.includes(p)) curr = curr.filter(x=>x!==p); else curr.push(p); setForm({...form(), platforms: curr.join(', ')}); };
-  
   const saveChanges = async () => { 
-    if (props.isGuest) {
-      props.showToast("Sign in to save changes! 🔒");
-      if (props.onLogin) props.onLogin();
-      return;
-    }
-    const nextSeason = parseInt(form().season) || 1;
-    const nextEpisode = parseInt(form().episode) || 1;
-    const prevSeason = parseInt(movie().season) || 1;
-    const prevEpisode = parseInt(movie().episode) || 1;
-    const episodeChanged = movie().media_type === 'tv' && (nextSeason !== prevSeason || nextEpisode !== prevEpisode);
-
-    const updates = { 
-      status: form().status, 
-      rating: parseFloat(form().rating)||0, 
-      watchDate: form().watchDate, 
-      seasonDates: form().seasonDates,
-      notes: form().notes, 
-      region: form().region, 
-      season: nextSeason, 
-      episode: nextEpisode, 
-      tag: form().tag, 
-      genresList: form().genres.split(',').map(s=>s.trim()).filter(Boolean), 
-      platformsList: form().platforms.split(',').map(s=>cleanPlatform(s.trim())).filter(Boolean) 
-    };
-
-    if (episodeChanged) {
-      const inferred = inferDurationSeconds();
-      updates.watchProgress = {
-        currentTime: 0,
-        duration: inferred || 0,
-        server: activeServer() || null,
-        updatedAt: new Date().toISOString(),
-        season: nextSeason,
-        episode: nextEpisode
-      };
-      setWatchProgress({ currentTime: 0, duration: inferred || 0 });
-      setPlayerStartProgress(0);
-    }
-
+    if (props.isGuest) { props.showToast("Sign in to save changes! 🔒"); if (props.onLogin) props.onLogin(); return; }
+    const nextSeason = parseInt(form().season) || 1; const nextEpisode = parseInt(form().episode) || 1; const prevSeason = parseInt(movie().season) || 1; const prevEpisode = parseInt(movie().episode) || 1; const episodeChanged = movie().media_type === 'tv' && (nextSeason !== prevSeason || nextEpisode !== prevEpisode);
+    const updates = { status: form().status, rating: parseFloat(form().rating)||0, watchDate: form().watchDate, seasonDates: form().seasonDates, notes: form().notes, region: form().region, season: nextSeason, episode: nextEpisode, tag: form().tag, genresList: form().genres.split(',').map(s=>s.trim()).filter(Boolean), platformsList: form().platforms.split(',').map(s=>cleanPlatform(s.trim())).filter(Boolean) };
+    if (episodeChanged) { const inferred = inferDurationSeconds(); updates.watchProgress = { currentTime: 0, duration: inferred || 0, server: activeServer() || null, updatedAt: new Date().toISOString(), season: nextSeason, episode: nextEpisode }; setWatchProgress({ currentTime: 0, duration: inferred || 0 }); setPlayerStartProgress(0); }
     await updateDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id)), updates); 
-    if(props.showToast) props.showToast("Saved"); 
-    setIsEdit(false); 
+    if(props.showToast) props.showToast("Saved"); setIsEdit(false); 
   };
   
   const isCompleted = createMemo(() => !isPreview() && (form().status || movie()?.status) === 'Completed');
-  const progressPct = createMemo(() => {
-    if (isCompleted()) return 100;
-    const loadedSeasonTotal = getEpisodesForSeason(currentSeasonNumber()).length;
-    const total = Number(movie()?.totalEps) || loadedSeasonTotal || 1;
-    return Math.min((currentEpisodeNumber() / total) * 100, 100);
-  });
+  const progressPct = createMemo(() => { if (isCompleted()) return 100; const loadedSeasonTotal = getEpisodesForSeason(currentSeasonNumber()).length; const total = Number(movie()?.totalEps) || loadedSeasonTotal || 1; return Math.min((currentEpisodeNumber() / total) * 100, 100); });
   const movieFranchises = createMemo(() => props.franchises?.filter(f => movie()?.franchises?.[f.id] !== undefined).map(f => f.name).join(', '));
 
   const addToVaultFromPreview = async () => {
-    if (props.isGuest) {
-      if(props.showToast) props.showToast("Sign in to add to Vault! 🔒");
-      if (props.onLogin) props.onLogin();
-      return;
-    }
-    const item = movie();
-    if ((props.watchlist || []).some(w => String(w.id) === String(item.id))) {
-      if(props.showToast) props.showToast("Already in Vault! 🍿");
-      return;
-    }
+    if (props.isGuest) { if(props.showToast) props.showToast("Sign in to add to Vault! 🔒"); if (props.onLogin) props.onLogin(); return; }
+    const item = movie(); if ((props.watchlist || []).some(w => String(w.id) === String(item.id))) { if(props.showToast) props.showToast("Already in Vault! 🍿"); return; }
     if(props.showToast) props.showToast("Adding to Vault...");
     try {
-      const castNames = details().credits?.cast?.slice(0, 5).map(c => c.name) || [];
-      const director = details().credits?.crew?.find(c => c.job === 'Director')?.name || '';
-      const castList = [...castNames, director].filter(Boolean);
-      await setDoc(doc(db, 'users', props.uid, 'watchlist', String(item.id)), {
-        id: String(item.id), title: item.title || item.name, media_type: item.media_type || 'movie', poster_path: item.poster_path, backdrop_path: item.backdrop_path, release_date: item.release_date || item.first_air_date || '', status: 'Planned', addedAt: new Date(), castList: castList
-      });
-      if(props.showToast) props.showToast("Added to Vault! 🍿");
-      props.onClose();
-    } catch (err) {
-      if(props.showToast) props.showToast("Error adding to vault.");
-    }
+      const castNames = details().credits?.cast?.slice(0, 5).map(c => c.name) || []; const director = details().credits?.crew?.find(c => c.job === 'Director')?.name || ''; const castList = [...castNames, director].filter(Boolean);
+      await setDoc(doc(db, 'users', props.uid, 'watchlist', String(item.id)), { id: String(item.id), title: item.title || item.name, media_type: item.media_type || 'movie', poster_path: item.poster_path, backdrop_path: item.backdrop_path, release_date: item.release_date || item.first_air_date || '', status: 'Planned', addedAt: new Date(), castList: castList });
+      if(props.showToast) props.showToast("Added to Vault! 🍿"); props.onClose();
+    } catch (err) { if(props.showToast) props.showToast("Error adding to vault."); }
   };
   
   const getStreamUrl = (serverId) => { 
     if (serverId === 'DIRECT_PLAY') return directPlayUrl(); 
-
-    if (!serverId) return '';
-    const id = movie().id; 
-    const s = movie().media_type === 'tv' ? currentSeasonNumber() : (movie().season || 1);
-    const e = movie().media_type === 'tv' ? currentEpisodeNumber() : (movie().episode || 1);
-    const type = movie().media_type === 'tv' ? 'tv' : 'movie';
-    
-    const serverConfig = availableServers().find(srv => srv.id === serverId);
-    if (!serverConfig) return '';
-    
-    let urlTemplate = type === 'tv' ? serverConfig.tvUrl : serverConfig.movieUrl;
-    if(!urlTemplate) return '';
-    
+    if (!serverId) return ''; const id = movie().id; const s = movie().media_type === 'tv' ? currentSeasonNumber() : (movie().season || 1); const e = movie().media_type === 'tv' ? currentEpisodeNumber() : (movie().episode || 1); const type = movie().media_type === 'tv' ? 'tv' : 'movie';
+    const serverConfig = availableServers().find(srv => srv.id === serverId); if (!serverConfig) return '';
+    let urlTemplate = type === 'tv' ? serverConfig.tvUrl : serverConfig.movieUrl; if(!urlTemplate) return '';
     let timeParam = '';
-    const canResumeFromProgress = movie().watchProgress
-      && movie().watchProgress.server === serverId
-      && movie().watchProgress.currentTime > 0
-      && (
-        movie().media_type !== 'tv' ||
-        (
-          parseInt(movie().watchProgress.season || 1) === parseInt(movie().season || 1) &&
-          parseInt(movie().watchProgress.episode || 1) === parseInt(movie().episode || 1)
-        )
-      );
-    if (canResumeFromProgress) {
-        const t = Math.floor(movie().watchProgress.currentTime);
-        timeParam = urlTemplate.includes('?')
-          ? `&t=${t}&start=${t}&time=${t}`
-          : `?t=${t}&start=${t}&time=${t}`; 
-    }
-    
-    return urlTemplate
-      .replace(/\{id\}|\[TMDB_ID\]/gi, id)
-      .replace(/\{season\}|\[SEASON\]/gi, s)
-      .replace(/\{episode\}|\[EPISODE\]/gi, e) + timeParam;
+    const canResumeFromProgress = movie().watchProgress && movie().watchProgress.server === serverId && movie().watchProgress.currentTime > 0 && ( movie().media_type !== 'tv' || ( parseInt(movie().watchProgress.season || 1) === parseInt(movie().season || 1) && parseInt(movie().watchProgress.episode || 1) === parseInt(movie().episode || 1) ) );
+    if (canResumeFromProgress) { const t = Math.floor(movie().watchProgress.currentTime); timeParam = urlTemplate.includes('?') ? `&t=${t}&start=${t}&time=${t}` : `?t=${t}&start=${t}&time=${t}`; }
+    return urlTemplate.replace(/\{id\}|\[TMDB_ID\]/gi, id).replace(/\{season\}|\[SEASON\]/gi, s).replace(/\{episode\}|\[EPISODE\]/gi, e) + timeParam;
   };
 
   return (
     <div class="fixed inset-0 z-[999999] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in" onClick={props.onClose}>
-      <div class="absolute inset-0 bg-[#08090b] overflow-hidden pointer-events-none"><Show when={movie()?.backdrop_path}><img src={`https://image.tmdb.org/t/p/w500${movie().backdrop_path}`} class="w-full h-full object-cover opacity-40 blur-3xl scale-125" /></Show><div class="absolute inset-0 bg-black/60"></div></div>
+      <div class="absolute inset-0 bg-[#08090b] overflow-hidden pointer-events-none">
+        <Show when={movie()?.backdrop_path}><img src={`https://image.tmdb.org/t/p/w500${movie().backdrop_path}`} class="w-full h-full object-cover opacity-40 blur-3xl scale-125" /></Show>
+        <div class="absolute inset-0 bg-black/60"></div>
+      </div>
+      
       <Show when={movie()}>
         <div class="w-full max-w-xl lg:max-w-[800px] bg-[#08090b]/80 backdrop-blur-3xl rounded-t-[2.5rem] sm:rounded-[2.5rem] overflow-hidden border border-white/10 relative max-h-[95vh] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] animate-pop-in flex flex-col" onClick={e=>e.stopPropagation()}>
           
           <button onClick={props.onClose} class="absolute top-4 right-4 z-[100] bg-black/50 backdrop-blur-md border border-white/10 p-2.5 rounded-full hover:bg-black/80 active:scale-95 transition-all"><Icon name="close" class="text-sm text-white"/></button>
           
           <div class="overflow-y-auto hide-scrollbar w-full">
-              <div class="h-56 md:h-72 relative bg-black shrink-0">
-                <Show when={!playTrailer()} fallback={<iframe class="w-full h-full absolute inset-0 z-10" src={`https://www.youtube.com/embed/${trailerKey()}?autoplay=1&rel=0`} frameborder="0" allowfullscreen></iframe>}>
-                  <Show when={movie().backdrop_path} fallback={<div class="w-full h-full flex items-center justify-center text-gray-700 bg-[#171921]"><Icon name="movie" class="text-6xl"/></div>}><img src={`https://image.tmdb.org/t/p/original${movie().backdrop_path}`} class="w-full h-full object-cover opacity-60" /></Show>
-                  <div class="absolute inset-0 bg-gradient-to-t from-[#08090b]/90 via-[#08090b]/40 to-transparent pointer-events-none" />
-                  <Show when={trailerKey()}><button onClick={() => setPlayTrailer(true)} class="absolute inset-0 flex items-center justify-center z-10 group"><div class="w-16 h-16 bg-[var(--primary)]/30 backdrop-blur-md rounded-full flex items-center justify-center border border-[var(--primary)]/50 group-hover:scale-110 active:scale-95 transition-transform shadow-2xl"><Icon name="play_arrow" fill class="text-white text-4xl"/></div></button></Show>
-                </Show>
-              </div>
+            <MediaHeader 
+              movie={movie()} details={details()} playTrailer={playTrailer()} setPlayTrailer={setPlayTrailer} 
+              trailerKey={trailerKey()} isPreview={isPreview()} isGuest={props.isGuest} 
+              isEdit={isEdit()} setIsEdit={setIsEdit} showToast={props.showToast} onLogin={props.onLogin} 
+            />
 
-              <div class="px-6 md:px-8 pb-28 -mt-16 relative z-10">
-                <div class="flex justify-between items-start mb-2">
-                    <div class="pr-2">
-                        <h2 class="text-3xl font-black drop-shadow-md leading-tight">{movie().title || movie().name}</h2>
-                        <p class="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1">
-                            {movie().release_date || details().release_date || 'N/A'} • {movie().media_type === 'tv' ? 'SERIES' : 'MOVIE'} 
-                            <Show when={details().runtime || details().episode_run_time?.[0]}> • {formatRuntime(details().runtime || details().episode_run_time?.[0])}</Show>
-                        </p>
+            <div class="px-6 md:px-8 pb-28 relative z-10">
+              <RatingsPanel omdbData={omdbData()} movie={movie()} />
+
+              <Show when={isEdit()} fallback={
+                <div class="animate-fade-in">
+                  <Show when={!isPreview()}>
+                    <StreamingPanel 
+                      availableServers={availableServers()} activeServer={activeServer()} setActiveServer={setActiveServer} 
+                      isEditingDirectUrl={isEditingDirectUrl()} setIsEditingDirectUrl={setIsEditingDirectUrl} 
+                      directPlayUrl={directPlayUrl()} setDirectPlayUrl={setDirectPlayUrl} showToast={props.showToast} 
+                      movie={movie()} inferDurationSeconds={inferDurationSeconds} setContentDuration={setContentDuration} 
+                      setWatchProgress={setWatchProgress} setPlayerStartProgress={setPlayerStartProgress} 
+                      setReceivedRealProgress={setReceivedRealProgress} setPlayerSessionStart={setPlayerSessionStart} 
+                      setShowPlayer={setShowPlayer} 
+                    />
+                  </Show>
+
+                  <p class="text-gray-400 text-sm mb-6 leading-relaxed italic border-l-2 border-[var(--primary)]/30 pl-3">
+                    "{details().overview || (typeof movie().overview === 'string' ? movie().overview : 'No overview available.')}"
+                  </p>
+                  
+                  <Show when={!isPreview() && movie().media_type === 'tv'}>
+                    <TvTracker 
+                      movie={movie()} tvSeasons={tvSeasons()} selectedSeason={selectedSeason()} setSelectedSeason={setSelectedSeason} 
+                      seasonsLoading={seasonsLoading()} selectedSeasonEpisodes={selectedSeasonEpisodes()} 
+                      episodeDocId={episodeDocId} watchedEpisodes={watchedEpisodes()} expandedEpisodes={expandedEpisodes()} 
+                      setExpandedEpisodes={setExpandedEpisodes} toggleEpisodeWatched={toggleEpisodeWatched} 
+                      isCompleted={isCompleted()} currentSeasonNumber={currentSeasonNumber()} currentEpisodeNumber={currentEpisodeNumber()} 
+                      progressPct={progressPct()} getCurrentEpisode={getCurrentEpisode} 
+                    />
+                  </Show>
+
+                  <CastCrewList credits={details().credits} setPersonId={setPersonId} />
+                  
+                  <InfoGrid 
+                    movie={movie()} isPreview={isPreview()} 
+                    genresText={details().genres ? details().genres.map(g => g.name).join(', ') : (getSafeGenres(movie()).join(', ') || 'N/A')} 
+                    richPlatforms={richPlatforms()} movieFranchises={movieFranchises()} similarItems={similarItems()} 
+                    onSimilarClick={(item) => { setOverrideItem({ ...item, media_type: item.media_type || (movie().media_type === 'tv' ? 'tv' : 'movie') }); document.querySelector('.overflow-y-auto.hide-scrollbar.w-full')?.scrollTo({ top: 0, behavior: 'smooth' }); }} 
+                    calculateDays={calculateDays} 
+                  />
+
+                  <Show when={isPreview()}>
+                    <button onClick={addToVaultFromPreview} class="w-full mt-6 font-black py-4 px-5 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform flex items-center justify-center gap-2 border" style="background: var(--p); color: #05060a; border-color: var(--p); box-shadow: 0 0 24px var(--p-glow); min-height: 52px;">
+                      <Icon name="add_circle" class="text-lg"/> Add to My Universe
+                    </button>
+                  </Show>
+                  
+                  <Show when={!isPreview()}>
+                    <div class="mt-8 flex justify-end">
+                      <button onClick={async () => { 
+                        if (props.isGuest) { if(props.showToast) props.showToast("Sign in to edit vault! 🔒"); if (props.onLogin) props.onLogin(); return; }
+                        if(confirm("Permanently delete?")) { await deleteDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id))); if(props.showToast) props.showToast("Deleted"); props.onClose(); } 
+                      }} class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition-colors mx-auto active:scale-95">
+                        <Icon name="delete" class="text-sm"/> Remove from Universe
+                      </button>
                     </div>
-                    <Show when={!isPreview()}>
-                        <button onClick={()=>{
-                            if (props.isGuest) {
-                              if(props.showToast) props.showToast("Sign in to edit! 🔒");
-                              if (props.onLogin) props.onLogin();
-                              return;
-                            }
-                            setIsEdit(!isEdit())
-                        }} class={`p-2.5 rounded-full border transition-colors shrink-0 ${isEdit() ? 'bg-[var(--primary)] text-[#0c0e14] border-[var(--primary)]' : 'glass-surface text-gray-400 hover:text-white'}`}><Icon name={isEdit()?'check':'edit'} class="text-sm"/></button>
-                    </Show>
+                  </Show>
                 </div>
-                
-                <div class="grid grid-cols-3 gap-2 my-5 w-full">
-                    <div class="bg-black/40 backdrop-blur-md border border-white/10 py-2 rounded-xl flex flex-col items-center justify-center text-center shadow-md">
-                        <div class="flex items-center gap-1 mb-0.5"><Icon name="star" fill class="text-[10px] text-[#f5c518]"/><span class="text-xs font-black text-white">{omdbData().imdb}</span></div>
-                        <span class="text-[7px] font-black text-gray-500 uppercase tracking-widest">IMDb</span>
-                    </div>
-                    <div class="bg-black/40 backdrop-blur-md border border-white/10 py-2 rounded-xl flex flex-col items-center justify-center text-center shadow-md">
-                        <div class="flex items-center gap-1 mb-0.5"><span class="text-[10px]">🍅</span><span class="text-xs font-black text-white">{omdbData().rt}</span></div>
-                        <span class="text-[7px] font-black text-gray-500 uppercase tracking-widest">RT</span>
-                    </div>
-                    <div class="bg-[var(--primary)]/10 backdrop-blur-md border border-[var(--primary)]/20 py-2 rounded-xl flex flex-col items-center justify-center text-center shadow-md">
-                        <div class="flex items-center gap-1 mb-0.5"><Icon name="person" fill class="text-[10px] text-[var(--primary)]"/><span class="text-xs font-black text-[var(--primary)]">{movie().rating ? `${movie().rating}/10` : '-'}</span></div>
-                        <span class="text-[7px] font-black text-[var(--primary)] uppercase tracking-widest opacity-70">Aman</span>
-                    </div>
-                </div>
-
-                <Show when={isEdit()} fallback={
-                  <div class="animate-fade-in">
-                    
-                    <Show when={!isPreview()}>
-                    <div class="mb-6 bg-black/40 backdrop-blur-md p-4 rounded-[1.5rem] border border-white/5 shadow-inner">
-                        <div class="flex justify-between items-center mb-3 px-1">
-                            <span class="text-[9px] uppercase font-black text-gray-400 tracking-widest flex items-center gap-1.5"><Icon name="router" class="text-[12px] text-[var(--primary)]"/> Streaming Node</span>
-                        </div>
-                        {(() => {
-                            const FAST_IDS = ['vidzee', 'vidlink'];
-                            const EMBED_IDS = ['vidsrcru', 'peachify', 'vidsrccc', 'autoembed', 'vidnest'];
-                            const fastList = () => availableServers().filter(s => FAST_IDS.includes(s.id));
-                            const embedList = () => availableServers().filter(s => EMBED_IDS.includes(s.id));
-                            const customList = () => availableServers().filter(s => !FAST_IDS.includes(s.id) && !EMBED_IDS.includes(s.id));
-
-                            const Chip = (srv) => (
-                                <button
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); setActiveServer(srv.id); }}
-                                    class="flex items-center justify-center gap-1.5 w-full h-9 px-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95"
-                                    style={activeServer() === srv.id
-                                        ? 'border: 1px solid var(--p); background: var(--p-dim); color: var(--p); box-shadow: 0 0 10px var(--p-glow)'
-                                        : 'border: 1px solid var(--border); background: var(--raised); color: var(--muted)'}>
-                                    <Icon name={srv.icon} class="text-[13px] shrink-0" />
-                                    <span class="truncate">{srv.name}</span>
-                                </button>
-                            );
-
-                            const GroupLabel = (label) => (
-                                <div class="flex items-center gap-2 mt-3 mb-1.5">
-                                    <span class="text-[8px] font-black uppercase tracking-[0.18em] shrink-0" style="color: var(--muted)">{label}</span>
-                                    <div class="flex-1 h-px" style="background: var(--border)" />
-                                </div>
-                            );
-
-                            return (
-                                <div class="pb-1">
-                                    <Show when={fastList().length > 0}>
-                                        {GroupLabel('⚡ Fast')}
-                                        <div class="grid grid-cols-2 gap-1.5">
-                                            <For each={fastList()}>{(srv) => <div>{Chip(srv)}</div>}</For>
-                                        </div>
-                                    </Show>
-                                    <Show when={embedList().length > 0}>
-                                        {GroupLabel('📡 Embed')}
-                                        <div class="grid grid-cols-2 gap-1.5">
-                                            <For each={embedList()}>{(srv) => <div>{Chip(srv)}</div>}</For>
-                                        </div>
-                                    </Show>
-                                    <Show when={customList().length > 0}>
-                                        {GroupLabel('🔗 Custom')}
-                                        <div class="grid grid-cols-2 gap-1.5">
-                                            <For each={customList()}>{(srv) => <div>{Chip(srv)}</div>}</For>
-                                        </div>
-                                    </Show>
-                                    <div class="flex items-center gap-2 mt-3">
-                                        <button
-                                            type="button"
-                                            onClick={(e) => { e.stopPropagation(); setActiveServer('DIRECT_PLAY'); }}
-                                            class="flex-1 flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95"
-                                            style={activeServer() === 'DIRECT_PLAY'
-                                                ? 'border: 1px solid #3b82f6; background: rgba(59,130,246,0.15); color: #3b82f6; box-shadow: 0 0 10px rgba(59,130,246,0.3)'
-                                                : 'border: 1px solid var(--border); background: var(--raised); color: var(--muted)'}>
-                                            <Icon name="dns" class="text-[13px] shrink-0" /> Direct Play
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={(e) => { e.stopPropagation(); setIsEditingDirectUrl(!isEditingDirectUrl()); }}
-                                            class="w-9 h-9 flex items-center justify-center rounded-xl border border-white/10 bg-white/5 text-gray-400 hover:text-white transition-colors shrink-0"
-                                            title="Edit Custom URL">
-                                            <Icon name="edit" class="text-[13px]" />
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })()}
-
-                        <Show when={isEditingDirectUrl()}>
-                            <div class="flex gap-2 mt-1 px-1 mb-2 animate-fade-in">
-                                <input type="text" value={directPlayUrl()} onInput={e => setDirectPlayUrl(e.target.value)} placeholder="Paste custom video URL here..." class="flex-1 bg-[#0c0e14] border border-white/10 rounded-lg p-2 text-xs text-white outline-none focus:border-[#3b82f6] transition-colors"/>
-                                <button type="button" onClick={(e) => { 
-                                    e.stopPropagation(); 
-                                    localStorage.setItem('cinelog_direct_play_url', directPlayUrl()); 
-                                    setIsEditingDirectUrl(false); 
-                                    if(props.showToast) props.showToast("Custom URL Saved!"); 
-                                }} class="bg-[#3b82f6] hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Save</button>
-                            </div>
-                        </Show>
-                        <Show when={!isEditingDirectUrl() && directPlayUrl() && activeServer() === 'DIRECT_PLAY'}>
-                            <div class="text-[9px] text-[#3b82f6] mt-1 px-2 truncate mb-2 animate-fade-in opacity-80">Link: {directPlayUrl()}</div>
-                        </Show>
-                        
-                        <button type="button" onClick={(e) => { 
-                            e.preventDefault(); 
-                            e.stopPropagation(); 
-                            
-                            if (!movie().watchProgress || movie().watchProgress.currentTime === 0) {
-                                const inferred = inferDurationSeconds();
-                                if (inferred > 0) setContentDuration(inferred);
-                                setWatchProgress({ currentTime: 0, duration: inferred }); 
-                            } else {
-                                if (movie().watchProgress.duration) setContentDuration(movie().watchProgress.duration);
-                                setWatchProgress(movie().watchProgress);
-                            }
-                            
-                            setPlayerStartProgress(movie().watchProgress?.currentTime || 0);
-                            setReceivedRealProgress(false);
-                            setPlayerSessionStart(Date.now());
-                            setShowPlayer(true); 
-                        }}
-                          class="w-full mt-3 font-black py-4 rounded-xl uppercase text-[11px] tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2"
-                          style="background: var(--p); color: #05060a; box-shadow: 0 0 24px var(--p-glow)">
-                            <Icon name="play_circle" fill class="text-[18px]"/> 
-                            {movie().watchProgress && movie().watchProgress.currentTime > 0 ? 'Resume Movie' : 'Watch Now'}
-                        </button>
-                    </div>
-                    </Show>
-
-                    <p class="text-gray-400 text-sm mb-6 leading-relaxed italic border-l-2 border-[var(--primary)]/30 pl-3">"{details().overview || (typeof movie().overview === 'string' ? movie().overview : 'No overview available.')}"</p>
-                    
-                    <Show when={!isPreview() && movie().media_type === 'tv'}>
-                        <div class="glass-surface rounded-[1.75rem] border border-white/10 mb-6 overflow-hidden shadow-2xl" style="background: linear-gradient(145deg, rgba(14,16,24,0.95), rgba(5,6,10,0.92)); border-color: var(--border-active)">
-                            <div class="p-5 border-b border-white/5">
-                                <div class="flex items-center justify-between gap-3 mb-4">
-                                    <div>
-                                        <p class="text-[10px] font-black uppercase tracking-[0.22em] flex items-center gap-2" style="color: var(--p)"><Icon name="live_tv" class="text-[15px]"/> Seasons & Episodes</p>
-                                        <p class="text-[11px] text-gray-500 font-bold mt-1">Track every episode with latest TMDB season data.</p>
-                                    </div>
-                                    <Show when={movie().newSeasonAvailable}>
-                                        <span class="shrink-0 text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border" style="color: var(--p); background: var(--p-dim); border-color: var(--p)">New Season</span>
-                                    </Show>
-                                </div>
-                                <div class="flex gap-2 overflow-x-auto hide-scrollbar pb-1">
-                                    <For each={tvSeasons()}>
-                                        {(s) => (
-                                            <button type="button" onClick={() => setSelectedSeason(Number(s.season_number))}
-                                                class="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border shrink-0 active:scale-95"
-                                                style={Number(selectedSeason()) === Number(s.season_number)
-                                                  ? 'background: var(--p); color: #05060a; border-color: var(--p); box-shadow: 0 0 16px var(--p-glow)'
-                                                  : 'background: rgba(255,255,255,0.04); color: var(--muted); border-color: var(--border)'}>
-                                                S{s.season_number}
-                                            </button>
-                                        )}
-                                    </For>
-                                </div>
-                            </div>
-
-                            <Show when={!seasonsLoading()} fallback={
-                                <div class="p-4 space-y-3">
-                                    <For each={[1,2,3]}>
-                                      {() => <div class="h-28 rounded-2xl skeleton-bg border border-white/5" />}
-                                    </For>
-                                </div>
-                            }>
-                                <div class="p-4 space-y-3 max-h-[560px] overflow-y-auto hide-scrollbar">
-                                    <Show when={selectedSeasonEpisodes().length > 0} fallback={
-                                        <div class="text-center py-10">
-                                            <Icon name="live_tv" class="text-4xl text-gray-700 mb-2" />
-                                            <p class="text-xs font-bold text-gray-500">Episode data is not available yet.</p>
-                                        </div>
-                                    }>
-                                        <For each={selectedSeasonEpisodes()}>
-                                            {(ep) => {
-                                                const epId = episodeDocId(ep.season_number || selectedSeason(), ep.episode_number);
-                                                const watched = createMemo(() => !!watchedEpisodes()[epId]?.watched);
-                                                const expanded = createMemo(() => !!expandedEpisodes()[epId]);
-                                                return (
-                                                  <div class="group rounded-2xl border border-white/5 bg-black/30 hover:bg-white/[0.035] hover:border-[var(--p)]/40 transition-all overflow-hidden">
-                                                    <div class="flex gap-3 p-3">
-                                                        <div class="relative w-28 sm:w-36 aspect-video rounded-xl overflow-hidden bg-[#11131b] shrink-0 border border-white/5">
-                                                            <Show when={ep.still_path} fallback={<div class="w-full h-full skeleton-bg flex items-center justify-center"><Icon name="movie" class="text-2xl text-gray-700" /></div>}>
-                                                                <img src={`https://image.tmdb.org/t/p/w300${ep.still_path}`} loading="lazy" class={`w-full h-full object-cover transition-all duration-300 ${watched() ? 'opacity-45 grayscale' : 'group-hover:scale-105'}`} />
-                                                            </Show>
-                                                            <Show when={watched()}>
-                                                                <div class="absolute inset-0 flex items-center justify-center bg-black/20"><Icon name="check_circle" fill class="text-3xl" style="color: var(--p)" /></div>
-                                                            </Show>
-                                                        </div>
-                                                        <div class="min-w-0 flex-1">
-                                                            <div class="flex items-start justify-between gap-3">
-                                                                <div class="min-w-0">
-                                                                    <h4 class="font-black text-white text-sm leading-snug">E{ep.episode_number} — {ep.name || 'Untitled Episode'}</h4>
-                                                                    <div class="flex flex-wrap gap-2 mt-1.5 text-[9px] font-bold uppercase tracking-widest text-gray-500">
-                                                                        <span>{ep.air_date || 'Air date TBA'}</span>
-                                                                        <Show when={ep.runtime}><span>• {ep.runtime} min</span></Show>
-                                                                    </div>
-                                                                </div>
-                                                                <button type="button" onClick={(e) => { e.stopPropagation(); toggleEpisodeWatched(ep); }}
-                                                                    class="shrink-0 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border active:scale-95"
-                                                                    style={watched()
-                                                                      ? 'background: var(--p2); color: #05060a; border-color: var(--p2); box-shadow: 0 0 16px rgba(255,255,255,0.08)'
-                                                                      : 'background: var(--p-dim); color: var(--p); border-color: var(--p)'}>
-                                                                    {watched() ? 'Watched ✓' : 'Watch'}
-                                                                </button>
-                                                            </div>
-                                                            <button type="button" onClick={() => setExpandedEpisodes(prev => ({ ...prev, [epId]: !expanded() }))} class="text-left w-full mt-2">
-                                                                <p class={`text-xs text-gray-400 leading-relaxed transition-all duration-300 ${expanded() ? '' : 'line-clamp-2'}`}>{ep.overview || 'No episode overview available.'}</p>
-                                                                <span class="inline-flex items-center gap-1 mt-1 text-[9px] font-black uppercase tracking-widest" style="color: var(--p)">{expanded() ? 'Show less' : 'More'} <Icon name={expanded() ? 'expand_less' : 'expand_more'} class="text-xs" /></span>
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                  </div>
-                                                );
-                                            }}
-                                        </For>
-                                    </Show>
-                                </div>
-                            </Show>
-                        </div>
-                    </Show>
-
-                    <Show when={!isPreview() && movie().media_type === 'tv'}>
-                        <div class="glass-surface p-5 rounded-2xl border border-white/5 mb-6">
-                            <div class="flex justify-between items-center mb-3">
-                                <span class="text-[10px] font-black uppercase tracking-widest text-gray-400 flex items-center gap-2"><Icon name="video_library" class="text-[14px] text-[var(--primary)]"/> Tracker</span>
-                                <span class="font-black text-sm text-white">{isCompleted() ? 'Completed' : `S${currentSeasonNumber()} E${currentEpisodeNumber()}`}</span>
-                            </div>
-                            <div class="w-full h-2 bg-black rounded-full overflow-hidden mb-4"><div class="h-full bg-[var(--primary)] transition-all shadow-[0_0_10px_var(--primary)]" style={{width:`${progressPct()}%`}}></div></div>
-                            <Show when={!isCompleted()}>
-                                <button onClick={() => toggleEpisodeWatched(getCurrentEpisode())} class="w-full rounded-xl py-2 text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all" style="background: var(--p-dim); color: var(--p); border: 1px solid var(--p)">Mark Current Watched → Next Episode</button>
-                            </Show>
-                        </div>
-                    </Show>
-
-                    <Show when={details().credits}>
-                        <div class="mb-8">
-                            <h3 class="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">Cast & Crew</h3>
-                            <div class="flex gap-5 overflow-x-auto hide-scrollbar pb-2">
-                                <For each={details().credits.cast.slice(0, 8)}>{(c) => (
-                                    <div onClick={() => setPersonId(c.id)} class="flex flex-col items-center min-w-[75px] shrink-0 cursor-pointer group">
-                                        <img src={c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${c.name}&backgroundColor=171921`} class="w-16 h-16 rounded-full object-cover border border-white/10 mb-2 shadow-lg bg-[#171921] group-hover:border-[var(--primary)] transition-colors" />
-                                        <p class="text-[9px] font-black text-center text-white truncate w-full group-hover:text-[var(--primary)] transition-colors">{c.name}</p>
-                                        <p class="text-[7px] text-gray-500 text-center uppercase truncate w-full font-bold mt-0.5">{c.character}</p>
-                                    </div>
-                                )}</For>
-                                <For each={details().credits.crew.filter(x=>x.job==='Director' || x.job==='Producer').slice(0,3)}>{(c) => (
-                                    <div onClick={() => setPersonId(c.id)} class="flex flex-col items-center min-w-[75px] shrink-0 cursor-pointer group">
-                                        <img src={c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${c.name}&backgroundColor=171921`} class="w-16 h-16 rounded-full object-cover border border-[var(--secondary)] mb-2 shadow-lg bg-[#171921] group-hover:border-[var(--primary)] transition-colors" />
-                                        <p class="text-[9px] font-black text-center text-white truncate w-full group-hover:text-[var(--primary)] transition-colors">{c.name}</p>
-                                        <p class="text-[7px] text-[var(--secondary)] text-center uppercase font-black tracking-widest mt-0.5">{c.job}</p>
-                                    </div>
-                                )}</For>
-                            </div>
-                        </div>
-                    </Show>
-
-                    <div class="glass-surface p-5 rounded-2xl space-y-4 border border-white/5">
-                        <Show when={!isPreview()}><SafeInfoRow icon="adjust" label="Status" value={<span class="text-[var(--primary)] font-black uppercase text-[10px] tracking-widest">{movie().status||'Planned'}</span>} /></Show>
-                        
-                        <Show when={!isPreview() && (movie().media_type !== 'tv' || !movie().seasonDates || Object.keys(movie().seasonDates).length === 0)}>
-                            <SafeInfoRow icon="calendar_today" label="Watch Date" value={<span class="text-xs text-gray-300">{movie().watchDate || 'Not set'}</span>} />
-                        </Show>
-
-                        <Show when={!isPreview()}><SafeInfoRow icon="public" label="Region" value={movie().region || 'International'} /></Show>
-                        <SafeInfoRow icon="format_list_bulleted" label="Genre" value={<span class="text-xs text-gray-300">{details().genres ? details().genres.map(g => g.name).join(', ') : (getSafeGenres(movie()).join(', ') || 'N/A')}</span>} />
-                        
-                        <SafeInfoRow icon="connected_tv" label="Available On" value={
-                            <Show when={richPlatforms().length > 0} fallback={<span class="text-xs font-bold text-gray-500">-</span>}>
-                                <div class="flex flex-wrap gap-2 mt-1">
-                                    <For each={richPlatforms().slice(0, 6)}>{(p) => (
-                                        <a href={p.url} target="_blank" rel="noopener noreferrer" title={p.name} class="flex flex-col items-center gap-1 bg-white/5 hover:bg-[var(--primary)]/20 border border-white/10 hover:border-[var(--primary)]/50 px-2 py-2 rounded-xl transition-all group shadow-sm min-w-[58px]">
-                                            <Show when={!p.isCss && p.logo} fallback={
-                                                <div class="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shadow-inner" style={{ "background-color": p.color || 'var(--p-dim)', color: p.color === '#ffffff' ? '#000' : 'var(--p)' }}>
-                                                    {p.name.charAt(0).toUpperCase()}
-                                                </div>
-                                            }>
-                                                <img src={p.logo} alt={p.name} class="w-7 h-7 rounded-lg object-cover bg-black border border-white/10" loading="lazy" />
-                                            </Show>
-                                            <span class="text-[8px] font-black text-gray-300 group-hover:text-white uppercase tracking-widest max-w-[54px] truncate">{p.name}</span>
-                                        </a>
-                                    )}</For>
-                                </div>
-                            </Show>
-                        } />
-                        
-                        <Show when={!isPreview() && movie().tag}><SafeInfoRow icon="label" label="Tag" value={<span class="text-[9px] font-black uppercase tracking-widest bg-white/10 text-white px-2 py-0.5 rounded border border-white/20">{movie().tag}</span>} /></Show>
-                        <Show when={!isPreview() && movieFranchises()}><SafeInfoRow icon="folder_special" label="Lists" value={<span class="text-xs font-bold text-white">{movieFranchises()}</span>} /></Show>
-                        <Show when={!isPreview() && movie().notes && typeof movie().notes === 'string'}><div class="border-t border-white/5 pt-3 mt-3"><p class="text-[10px] uppercase font-black text-gray-500 tracking-widest mb-1 flex items-center gap-1"><Icon name="edit_note" class="text-[14px]"/> Notes</p><p class="text-sm text-gray-300 italic">"{movie().notes}"</p></div></Show>
-
-                        <Show when={similarItems().length > 0}>
-                          <div class="mb-8 mt-6">
-                            <h3 class="text-[10px] font-bold uppercase text-gray-500 tracking-widest mb-3 px-1 flex items-center gap-2">
-                              <Icon name="auto_awesome" class="text-[12px]" style="color: var(--p)"/> More Like This
-                            </h3>
-                            <div class="flex gap-3 overflow-x-auto hide-scrollbar pb-2">
-                              <For each={similarItems()}>{(item) => (
-                                <div 
-                                  onClick={() => {
-                                    setOverrideItem({ ...item, media_type: item.media_type || (movie().media_type === 'tv' ? 'tv' : 'movie') });
-                                    document.querySelector('.overflow-y-auto.hide-scrollbar.w-full')?.scrollTo({ top: 0, behavior: 'smooth' });
-                                  }}
-                                  class="min-w-[110px] w-[110px] shrink-0 cursor-pointer active:scale-95 transition-transform"
-                                >
-                                  <img src={`https://image.tmdb.org/t/p/w200${item.poster_path}`} class="w-full h-[160px] rounded-xl object-cover bg-[#171921] mb-2 border border-white/5" />
-                                  <p class="text-[10px] font-bold text-gray-200 line-clamp-2 leading-tight">{item.title || item.name}</p>
-                                </div>
-                              )}</For>
-                            </div>
-                          </div>
-                        </Show>
-
-                        <Show when={!isPreview() && movie().media_type === 'tv' && movie().seasonDates && Object.keys(movie().seasonDates).length > 0 && Object.keys(movie().seasonDates).some(k => movie().seasonDates[k].start || movie().seasonDates[k].end)}>
-                            <div class="border-t border-white/5 pt-4 mt-2">
-                                <p class="text-[10px] uppercase font-black text-[var(--primary)] tracking-widest mb-2 flex items-center gap-1.5"><Icon name="history" class="text-[14px]"/> Season Timeline</p>
-                                <div class="space-y-1.5">
-                                    <For each={Object.entries(movie().seasonDates).filter(e => e[1].start || e[1].end).sort((a,b)=>Number(a[0])-Number(b[0]))}>
-                                        {([s, d]) => {
-                                            const days = calculateDays(d.start, d.end);
-                                            const formatD = (ds) => ds ? new Date(ds).toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'2-digit'}) : 'Present';
-                                            return (
-                                                <div class="flex justify-between items-center bg-black/40 px-3 py-2 rounded-xl border border-white/5 shadow-inner">
-                                                    <span class="text-[10px] font-black text-white tracking-widest uppercase">Season {s}</span>
-                                                    <div class="flex items-center gap-2.5">
-                                                        <span class="text-[9px] text-gray-300 font-bold tracking-wider flex items-center gap-1.5">
-                                                            {formatD(d.start)} <Icon name="arrow_forward" class="text-[10px] text-gray-500"/> {d.end ? formatD(d.end) : <span class="text-gray-500">Present</span>}
-                                                        </span>
-                                                        <Show when={days !== null}>
-                                                            <span class="text-[8px] bg-[var(--primary)]/10 text-[var(--primary)] border border-[var(--primary)]/20 px-1.5 py-0.5 rounded font-black uppercase tracking-widest shadow-sm">{days} Day{days !== 1 ? 's' : ''}</span>
-                                                        </Show>
-                                                    </div>
-                                                </div>
-                                            );
-                                        }}
-                                    </For>
-                                </div>
-                            </div>
-                        </Show>
-                    </div>
-
-                    <Show when={isPreview()}>
-                        <button onClick={addToVaultFromPreview} class="w-full mt-6 font-black py-4 px-5 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform flex items-center justify-center gap-2 border" style="background: var(--p); color: #05060a; border-color: var(--p); box-shadow: 0 0 24px var(--p-glow); min-height: 52px; opacity: 1; visibility: visible">
-                            <Icon name="add_circle" class="text-lg"/> Add to My Universe
-                        </button>
-                    </Show>
-                    <Show when={!isPreview()}>
-                        <div class="mt-8 flex justify-end"><button onClick={async () => { 
-                            if (props.isGuest) {
-                              if(props.showToast) props.showToast("Sign in to edit vault! 🔒");
-                              if (props.onLogin) props.onLogin();
-                              return;
-                            }
-                            if(confirm("Permanently delete?")) { await deleteDoc(doc(db, 'users', props.uid, 'watchlist', String(movie().id))); if(props.showToast) props.showToast("Deleted"); props.onClose(); } 
-                          }} class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition-colors mx-auto active:scale-95"><Icon name="delete" class="text-sm"/> Remove from Universe</button></div>
-                    </Show>
-                  </div>
-                }>
-                  <div class="glass-surface p-6 rounded-2xl space-y-4 animate-fade-in border border-[var(--primary)]/30 mt-4 shadow-lg shadow-[var(--primary)]/10">
-                    <div class="grid grid-cols-2 gap-4">
-                        <div><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Status</label><select value={form().status} onChange={e=>setForm({...form(), status: e.target.value})} class="w-full bg-[#0c0e14] border border-white/10 p-2.5 rounded-xl text-sm text-white outline-none focus:border-[var(--primary)]"><option value="Planned">Planned</option><option value="Watching">Watching</option><option value="Completed">Completed</option></select></div>
-                        <div><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Personal Rating</label><input type="number" step="0.1" min="0" max="10" value={form().rating} onChange={e=>setForm({...form(), rating: e.target.value})} class="w-full bg-[#0c0e14] border border-white/10 p-2.5 rounded-xl text-sm text-white outline-none focus:border-[var(--primary)]"/></div>
-                    </div>
-                    
-                    <Show when={movie().media_type === 'tv'}>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Season</label><input type="number" value={form().season} onInput={e=>setForm({...form(), season: e.target.value})} class="w-full bg-[#0c0e14] border border-white/10 p-2.5 rounded-xl text-sm text-white outline-none focus:border-[var(--primary)]"/></div>
-                            <div><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Episode</label><input type="number" value={form().episode} onInput={e=>setForm({...form(), episode: e.target.value})} class="w-full bg-[#0c0e14] border border-white/10 p-2.5 rounded-xl text-sm text-white outline-none focus:border-[var(--primary)]"/></div>
-                        </div>
-                    </Show>
-                    
-                    <div class="grid grid-cols-2 gap-4">
-                        <Show when={movie().media_type === 'movie'}>
-                            <div><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Watch Date</label><input type="date" value={form().watchDate} onInput={e=>setForm({...form(), watchDate: e.target.value})} class="w-full bg-[#0c0e14] border border-white/10 p-2.5 rounded-xl text-sm text-white [color-scheme:dark] outline-none focus:border-[var(--primary)]"/></div>
-                        </Show>
-                        <div class={movie().media_type === 'tv' ? 'col-span-2' : ''}><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Region</label><select value={form().region} onChange={e=>setForm({...form(), region: e.target.value})} class="w-full bg-[#0c0e14] border border-white/10 p-2.5 rounded-xl text-sm text-white outline-none focus:border-[var(--primary)]"><option>International</option><option>Indian</option></select></div>
-                    </div>
-
-                    <Show when={movie().media_type === 'tv'}>
-                        <div class="mt-4">
-                            <label class="text-[9px] uppercase font-black text-gray-500 mb-2 block tracking-widest flex items-center gap-1"><Icon name="history" class="text-[14px]"/> Season Timelines</label>
-                            <div class="space-y-2 bg-black/40 p-3 rounded-2xl border border-white/5 shadow-inner max-h-48 overflow-y-auto hide-scrollbar">
-                                <For each={Array.from({length: Math.max(1, parseInt(form().season) || 1)})}>
-                                    {(_, i) => {
-                                        const s = i() + 1;
-                                        const d = form().seasonDates[s] || { start: '', end: '' };
-                                        return (
-                                            <div class="flex flex-col sm:flex-row sm:items-center gap-2 bg-[#0c0e14] p-2 rounded-xl border border-white/5">
-                                                <span class="text-[10px] font-black text-[var(--primary)] w-8 text-center bg-[var(--primary)]/10 py-1 rounded-md">S{s}</span>
-                                                <div class="flex flex-1 items-center gap-2">
-                                                    <div class="flex-1">
-                                                        <input type="date" value={d.start} onInput={e => setForm(prev => ({...prev, seasonDates: {...prev.seasonDates, [s]: {...(prev.seasonDates[s]||{}), start: e.target.value}}}))} class="w-full bg-transparent border-b border-white/10 p-1 text-xs text-white [color-scheme:dark] outline-none focus:border-[var(--primary)] transition-colors" title={`Season ${s} Start Date`}/>
-                                                    </div>
-                                                    <Icon name="arrow_forward" class="text-gray-600 text-[12px]"/>
-                                                    <div class="flex-1">
-                                                        <input type="date" value={d.end} onInput={e => setForm(prev => ({...prev, seasonDates: {...prev.seasonDates, [s]: {...(prev.seasonDates[s]||{}), end: e.target.value}}}))} class="w-full bg-transparent border-b border-white/10 p-1 text-xs text-white [color-scheme:dark] outline-none focus:border-[var(--primary)] transition-colors" title={`Season ${s} End Date`}/>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )
-                                    }}
-                                </For>
-                            </div>
-                        </div>
-                    </Show>
-
-                    <div><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Custom Tag</label><input placeholder="e.g. Theatre" value={form().tag} onInput={e=>setForm({...form(), tag: e.target.value})} class="w-full bg-[#0c0e14] border border-white/10 p-2.5 rounded-xl text-sm text-white outline-none focus:border-[var(--primary)] placeholder-gray-700"/></div>
-                    <div><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Available Platforms</label><div class="flex flex-wrap gap-2 p-3 bg-[#0c0e14] border border-white/5 rounded-xl"><For each={allAvailablePlatforms()}>{p => <button type="button" onClick={()=>togglePlatform(p)} class={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors shadow-sm active:scale-95 ${form().platforms.split(',').map(s=>s.trim()).includes(p) ? 'bg-gradient-to-tr from-[var(--secondary)] to-[var(--primary)] text-[#0c0e14]' : 'bg-white/5 text-gray-400 hover:text-white border border-white/5'}`}>{p}</button>}</For></div></div>
-                    <div><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">Genres (Comma separated)</label><input value={form().genres || (details().genres ? details().genres.map(g=>g.name).join(', ') : '')} onInput={e=>setForm({...form(), genres: e.target.value})} class="w-full bg-[#0c0e14] border border-white/10 p-2.5 rounded-xl text-sm text-white outline-none focus:border-[var(--primary)]"/></div>
-                    <div><label class="text-[9px] uppercase font-black text-gray-500 mb-1 block tracking-widest">My Notes</label><textarea value={form().notes} onInput={e=>setForm({...form(), notes: e.target.value})} class="w-full bg-[#0c0e14] border border-white/10 p-2.5 rounded-xl text-sm text-white outline-none focus:border-[var(--primary)] placeholder-gray-700" rows="3" placeholder="Write your thoughts..."></textarea></div>
-                    <button onClick={saveChanges} class="w-full font-black py-4 rounded-xl text-[10px] uppercase tracking-widest mt-2 active:scale-95 transition-all flex items-center justify-center gap-2" style="background: var(--p); color: #05060a; box-shadow: 0 0 28px var(--p-glow), 0 4px 16px rgba(0,0,0,0.4)">Save Universe Changes</button>
-                  </div>
-                </Show>
-              </div>
+              }>
+                <EditForm 
+                  form={form()} setForm={setForm} movie={movie()} 
+                  allAvailablePlatforms={allAvailablePlatforms} togglePlatform={togglePlatform} saveChanges={saveChanges} 
+                />
+              </Show>
+            </div>
           </div>
         </div>
       </Show>
@@ -1147,51 +474,29 @@ export function DetailsModal(props) {
         <div class="fixed inset-0 bg-black z-[10000000] flex flex-col animate-fade-in" onClick={(e)=>e.stopPropagation()}>
           <div class="p-4 flex justify-between items-center bg-[#0c0e14] border-b border-white/5 shadow-xl">
             <div class="flex items-center gap-3 overflow-hidden pr-2 flex-1">
-                <button type="button" onClick={(e) => { 
-                    e.stopPropagation(); 
-                    hydrateSessionProgressFromElapsed();
-                    saveProgressToDb();
-                    setPlayerSessionStart(null);
-                    setPlayerStartProgress(0);
-                    setShowPlayer(false); 
-                }} class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all shrink-0"><Icon name="arrow_back" class="text-sm" /></button>
+                <button type="button" onClick={(e) => { e.stopPropagation(); hydrateSessionProgressFromElapsed(); saveProgressToDb(); setPlayerSessionStart(null); setPlayerStartProgress(0); setShowPlayer(false); }} class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all shrink-0"><Icon name="arrow_back" class="text-sm" /></button>
                 <h3 class="font-bold text-sm text-white truncate max-w-[150px]">{movie().title || movie().name}</h3>
             </div>
-            
             <div class="flex gap-2 shrink-0">
                 <div class="relative bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 flex items-center gap-1 hover:bg-white/10 transition-colors">
                     <Icon name="router" class="text-gray-400 text-[14px]" />
                     <select value={activeServer()} onChange={(e) => { e.stopPropagation(); setActiveServer(e.target.value); }} class="bg-transparent text-[10px] font-black uppercase tracking-widest text-[var(--primary)] outline-none appearance-none cursor-pointer pr-4 pl-1">
                         <For each={availableServers()}>{(srv) => <option value={srv.id} class="bg-[#0c0e14] text-white">{srv.name}</option>}</For>
-                        
                         <option value="DIRECT_PLAY" class="bg-[#0c0e14] text-[#3b82f6]">DIRECT PLAY</option>
                     </select>
                     <Icon name="expand_more" class="text-gray-400 text-[14px] absolute right-1 pointer-events-none" />
                 </div>
             </div>
           </div>
-          
-          {/* 🚀 Vidstack Integration 🚀 */}
           <div class="flex-1 bg-black w-full h-full relative">
-            <Show when={activeServer() === 'DIRECT_PLAY'} fallback={
-              <iframe src={getStreamUrl(activeServer())} class="w-full h-full border-none relative z-10" allowfullscreen ></iframe>
-            }>
-              <DirectPlayPlayer 
-                 src={getStreamUrl(activeServer())}
-                 title={movie().title || movie().name}
-                 poster={`https://image.tmdb.org/t/p/original${movie().backdrop_path}`}
-                 startTime={movie().watchProgress?.currentTime || 0}
-                 onProgress={(prog) => {
-                    setReceivedRealProgress(true);
-                    setWatchProgress(prog);
-                 }}
-              />
+            <Show when={activeServer() === 'DIRECT_PLAY'} fallback={<iframe src={getStreamUrl(activeServer())} class="w-full h-full border-none relative z-10" allowfullscreen></iframe>}>
+              <DirectPlayPlayer src={getStreamUrl(activeServer())} title={movie().title || movie().name} poster={`https://image.tmdb.org/t/p/original${movie().backdrop_path}`} startTime={movie().watchProgress?.currentTime || 0} onProgress={(prog) => { setReceivedRealProgress(true); setWatchProgress(prog); }} />
             </Show>
           </div>
-
         </div>
       </Show>
 
+      {/* FIXED PERSON MODAL USING id INSTEAD OF personId */}
       <Show when={personId()}>
         <PersonModal
           id={personId()} 
@@ -1210,7 +515,6 @@ export function DetailsModal(props) {
           }}
         />
       </Show>
-
     </div>
   );
 }
