@@ -239,17 +239,17 @@ export function ServerSettingsModal(props) {
     <div class="fixed inset-0 flex items-center justify-center p-4 z-[999999] animate-fade-in"
       style="background: rgba(0,0,0,0.88); backdrop-filter: blur(12px)"
       onClick={props.onClose}>
-      <div class="w-full max-w-2xl rounded-[2.5rem] p-6 animate-pop-in overflow-hidden flex flex-col max-h-[92vh]"
+      <div class="w-full max-w-2xl rounded-[1.5rem] sm:rounded-[2.5rem] p-5 sm:p-6 animate-pop-in overflow-hidden flex flex-col max-h-[92vh]"
         style="background: rgba(9,11,16,0.98); border: 1px solid var(--border-active)"
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div class="flex justify-between items-center border-b pb-5 mb-6 shrink-0" style="border-color: var(--border)">
           <div>
-            <h3 class="font-bold text-xl flex items-center gap-2 text-white">
+            <h3 class="font-bold text-lg sm:text-xl flex items-center gap-2 text-white">
               <Icon name="dns" style="color: var(--p)" /> Streaming Nodes
             </h3>
-            <p class="text-[10px] uppercase tracking-widest font-bold mt-1.5" style="color: var(--muted)">Configure active data sources for your vault</p>
+            <p class="text-[9px] sm:text-[10px] uppercase tracking-widest font-bold mt-1.5" style="color: var(--muted)">Configure active data sources for your vault</p>
           </div>
           <button onClick={props.onClose} class="w-10 h-10 rounded-full flex items-center justify-center transition-colors hover:bg-white/10 active:scale-95 border border-white/5 bg-[#141414]">
             <Icon name="close" class="text-white" />
@@ -266,7 +266,7 @@ export function ServerSettingsModal(props) {
                 const isEnabled = () => server.enabled !== false;
 
                 return (
-                  <div class="rounded-2xl transition-all duration-300 overflow-hidden border"
+                  <div class="rounded-2xl transition-all duration-300 overflow-hidden border shrink-0"
                     style={{
                       background: isEnabled() ? "var(--surface)" : "rgba(20,20,20,0.4)",
                       "border-color": isExpanded() ? "var(--border-active)" : "var(--border)"
@@ -274,10 +274,10 @@ export function ServerSettingsModal(props) {
                     
                     {/* Collapsed/Header Row */}
                     <div 
-                      class="flex items-center p-4 cursor-pointer hover:bg-white/5 transition-colors"
+                      class="flex items-center p-3 sm:p-4 cursor-pointer hover:bg-white/5 transition-colors"
                       onClick={() => toggleExpand(server.id)}
                     >
-                      <div class="w-10 h-10 rounded-xl flex items-center justify-center mr-4 shrink-0 transition-opacity border" 
+                      <div class="hidden sm:flex w-10 h-10 rounded-xl items-center justify-center mr-4 shrink-0 transition-opacity border" 
                            style={{ background: "var(--raised)", opacity: isEnabled() ? 1 : 0.4, "border-color": "var(--border)" }}>
                         <Icon name={server.icon || 'public'} class="text-lg" style="color: var(--p)" />
                       </div>
@@ -287,12 +287,12 @@ export function ServerSettingsModal(props) {
                         <div class="flex items-center gap-2 mt-0.5">
                           <span class="text-[9px] font-bold uppercase tracking-widest text-gray-500 truncate">{server.domain || server.provider}</span>
                           <Show when={server.isCustom}>
-                            <span class="text-[8px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-bold uppercase tracking-wider border border-blue-500/20">Custom</span>
+                            <span class="text-[8px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 font-bold uppercase tracking-wider border border-blue-500/20 shrink-0">Custom</span>
                           </Show>
                         </div>
                       </div>
 
-                      <div class="flex items-center gap-4 shrink-0" onClick={e => e.stopPropagation()}>
+                      <div class="flex items-center gap-3 shrink-0" onClick={e => e.stopPropagation()}>
                         {/* Custom Toggle Switch */}
                         <button 
                           onClick={() => setServers(prev => prev.map(s => s.id === server.id ? { ...s, enabled: !isEnabled() } : s))} 
@@ -303,32 +303,37 @@ export function ServerSettingsModal(props) {
                                style={{ background: isEnabled() ? "var(--p)" : "#555", transform: isEnabled() ? 'translateX(18px)' : 'translateX(0)' }} />
                         </button>
                         
-                        <Icon name={isExpanded() ? "expand_less" : "expand_more"} class="text-gray-500 transition-transform" />
+                        <Icon name={isExpanded() ? "expand_less" : "expand_more"} class="text-gray-500 transition-transform hidden sm:block" />
                       </div>
                     </div>
 
                     {/* Expanded Content View */}
-                    <div class={`transition-all duration-300 overflow-hidden ${isExpanded() ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
-                      <div class="p-4 pt-0 border-t border-white/5 bg-black/20">
+                    <div class={`transition-all duration-300 overflow-hidden ${isExpanded() ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                      <div class="p-3 sm:p-4 pt-0 border-t border-white/5 bg-black/20">
                         
-                        {/* Quick Actions Toolbar */}
-                        <div class="flex flex-wrap gap-2 py-3">
-                          <button onClick={(e) => testServerUrl(server.id, 'movie', e)} class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-300 hover:text-white border border-white/10 hover:border-white/20 bg-[#141414] transition-all">
-                            <Icon name="movie" class="text-[14px]" style="color: var(--p)"/> Test Movie
+                        {/* Quick Actions Toolbar - FIXED FOR MOBILE */}
+                        <div class="flex flex-wrap items-center gap-2 py-3">
+                          <button onClick={() => { setEditingId(server.id); setEditData({ movieUrl: server.movieUrl, tvUrl: server.tvUrl }); }} class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-black transition-all shrink-0" style="background: var(--p); box-shadow: 0 0 8px var(--p-glow)">
+                            <Icon name="edit" class="text-[14px]"/> Edit
                           </button>
-                          <button onClick={(e) => testServerUrl(server.id, 'tv', e)} class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-300 hover:text-white border border-white/10 hover:border-white/20 bg-[#141414] transition-all">
-                            <Icon name="tv" class="text-[14px]" style="color: var(--p)"/> Test TV
+
+                          <button onClick={(e) => testServerUrl(server.id, 'movie', e)} class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-300 hover:text-white border border-white/10 hover:border-white/20 bg-[#141414] transition-all shrink-0">
+                            <Icon name="movie" class="text-[14px]" style="color: var(--p)"/> Movie
+                          </button>
+
+                          <button onClick={(e) => testServerUrl(server.id, 'tv', e)} class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-gray-300 hover:text-white border border-white/10 hover:border-white/20 bg-[#141414] transition-all shrink-0">
+                            <Icon name="tv" class="text-[14px]" style="color: var(--p)"/> TV
                           </button>
                           
                           <div class="flex-1" /> {/* Spacer */}
                           
                           <Show when={!server.isCustom && editingId() !== server.id}>
-                            <button onClick={() => setReplaceMode(server.id)} class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all" style="color: var(--p2); border: 1px solid rgba(var(--p2-rgb, 255,120,196), 0.3); background: rgba(var(--p2-rgb, 255,120,196), 0.1)">
+                            <button onClick={() => setReplaceMode(server.id)} class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all shrink-0" style="color: var(--p2); border: 1px solid rgba(var(--p2-rgb, 255,120,196), 0.3); background: rgba(var(--p2-rgb, 255,120,196), 0.1)">
                               <Icon name="swap_horiz" class="text-[14px]"/> Replace
                             </button>
                           </Show>
                           <Show when={server.isCustom}>
-                            <button onClick={(e) => deleteCustomServer(server.id, e)} class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-400 hover:text-red-300 border border-red-500/30 bg-red-500/10 transition-all">
+                            <button onClick={(e) => deleteCustomServer(server.id, e)} class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest text-red-400 hover:text-red-300 border border-red-500/30 bg-red-500/10 transition-all shrink-0">
                               <Icon name="delete" class="text-[14px]"/> Delete
                             </button>
                           </Show>
@@ -338,7 +343,7 @@ export function ServerSettingsModal(props) {
                         <Show when={replaceMode() === server.id}>
                           <div class="mb-3 p-3 rounded-xl border border-white/10 bg-[#141414] animate-fade-in">
                             <p class="text-[10px] font-bold uppercase tracking-widest text-[var(--p)] mb-2">Select Replacement Node:</p>
-                            <div class="grid grid-cols-2 gap-2">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               <For each={servers().filter(s => s.id !== server.id && s.enabled !== false)}>
                                 {(replacement) => (
                                   <button onClick={() => replaceServer(server.id, replacement.id)} class="px-2 py-2 rounded-lg text-xs font-bold text-white transition-all active:scale-95 hover:bg-white/10" style="background: var(--raised); border: 1px solid var(--border)">
@@ -351,24 +356,20 @@ export function ServerSettingsModal(props) {
                           </div>
                         </Show>
 
-                        {/* URL Read/Edit Area */}
-                        <Show when={editingId() === server.id}
-                          fallback={
-                            <div class="relative group mt-1">
-                              <div class="space-y-2">
-                                <div class="w-full px-3 py-2.5 rounded-xl border font-mono text-[11px] overflow-x-auto hide-scrollbar whitespace-nowrap text-gray-300" style="background: var(--raised); border-color: var(--border)">
-                                  <span class="text-gray-500 mr-2 select-none">Movie:</span> {server.movieUrl || 'None'}
-                                </div>
-                                <div class="w-full px-3 py-2.5 rounded-xl border font-mono text-[11px] overflow-x-auto hide-scrollbar whitespace-nowrap text-gray-300" style="background: var(--raised); border-color: var(--border)">
-                                  <span class="text-gray-500 mr-2 select-none">Series:</span> {server.tvUrl || 'None'}
-                                </div>
-                              </div>
-                              <button onClick={() => { setEditingId(server.id); setEditData({ movieUrl: server.movieUrl, tvUrl: server.tvUrl }); }} class="absolute top-2 right-2 w-8 h-8 rounded-lg bg-[#141414] border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:border-[var(--p)] transition-all opacity-0 group-hover:opacity-100 shadow-xl">
-                                <Icon name="edit" class="text-[14px]" />
-                              </button>
+                        {/* URL Read Area */}
+                        <Show when={editingId() !== server.id}>
+                          <div class="space-y-2 mt-1">
+                            <div class="w-full px-3 py-2.5 rounded-xl border font-mono text-[11px] overflow-x-auto hide-scrollbar whitespace-nowrap text-gray-300" style="background: var(--raised); border-color: var(--border)">
+                              <span class="text-gray-500 mr-2 select-none">Movie:</span> {server.movieUrl || 'None'}
                             </div>
-                          }>
-                          {/* Edit Mode */}
+                            <div class="w-full px-3 py-2.5 rounded-xl border font-mono text-[11px] overflow-x-auto hide-scrollbar whitespace-nowrap text-gray-300" style="background: var(--raised); border-color: var(--border)">
+                              <span class="text-gray-500 mr-2 select-none">Series:</span> {server.tvUrl || 'None'}
+                            </div>
+                          </div>
+                        </Show>
+
+                        {/* URL Edit Mode Area */}
+                        <Show when={editingId() === server.id}>
                           <div class="space-y-3 mt-1 animate-fade-in p-3 rounded-xl border border-[var(--p)] bg-[#141414]">
                             <div>
                               <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Movie Endpoints</p>
@@ -378,7 +379,7 @@ export function ServerSettingsModal(props) {
                               <p class="text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1 ml-1">Series Endpoints</p>
                               <textarea value={editData().tvUrl || server.tvUrl} onInput={(e) => setEditData(prev => ({ ...prev, tvUrl: e.target.value }))} class="w-full px-3 py-2 rounded-lg text-[11px] font-mono border outline-none text-white focus:border-[var(--p)] transition-colors" rows="2" style="background: var(--deep); border-color: var(--border)" placeholder="https://example.com/tv/{id}/{season}/{episode}" />
                             </div>
-                            <p class="text-[9px] font-mono text-gray-500 bg-black/50 p-2 rounded-lg border border-white/5">Vars: <span class="text-[var(--p)]">{'{id}'}</span>, <span class="text-[var(--p)]">{'{season}'}</span>, <span class="text-[var(--p)]">{'{episode}'}</span></p>
+                            <p class="text-[9px] font-mono text-gray-500 bg-black/50 p-2 rounded-lg border border-white/5 break-words">Vars: <span class="text-[var(--p)]">{'{id}'}</span>, <span class="text-[var(--p)]">{'{season}'}</span>, <span class="text-[var(--p)]">{'{episode}'}</span></p>
                             
                             <div class="flex gap-2 pt-1">
                               <button onClick={() => { setServers(prev => prev.map(s => s.id === server.id ? { ...s, movieUrl: editData().movieUrl, tvUrl: editData().tvUrl } : s)); setEditingId(null); }} class="flex-1 px-3 py-2.5 rounded-lg font-bold text-xs uppercase text-black active:scale-95 transition-transform" style="background: var(--p); box-shadow: 0 0 12px var(--p-glow)">Apply Changes</button>
@@ -395,9 +396,9 @@ export function ServerSettingsModal(props) {
             </For>
 
             {/* ADD CUSTOM SERVER SECTION */}
-            <div class="mt-4">
+            <div class="mt-4 shrink-0">
               <Show when={!showAddForm()} fallback={
-                <div class="rounded-2xl p-5 border shadow-xl animate-fade-in" style="background: var(--surface); border-color: var(--p)">
+                <div class="rounded-2xl p-4 sm:p-5 border shadow-xl animate-fade-in" style="background: var(--surface); border-color: var(--p)">
                   <h4 class="font-bold text-base text-white mb-4 flex items-center gap-2">
                     <Icon name="add_circle" style="color: var(--p)" /> Initialize Custom Node
                   </h4>
@@ -436,12 +437,12 @@ export function ServerSettingsModal(props) {
         </Show>
 
         {/* Footer Actions */}
-        <div class="border-t pt-5 mt-2 flex gap-3 shrink-0" style="border-color: var(--border)">
-          <button onClick={resetToDefault} class="px-4 font-bold py-3.5 rounded-xl text-[10px] uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center border border-white/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30" style="background: #141414; color: var(--muted)" title="Reset Defaults">
+        <div class="border-t pt-4 sm:pt-5 mt-2 flex gap-3 shrink-0" style="border-color: var(--border)">
+          <button onClick={resetToDefault} class="px-4 font-bold py-3.5 rounded-xl text-[10px] uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center border border-white/10 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 shrink-0" style="background: #141414; color: var(--muted)" title="Reset Defaults">
             <Icon name="refresh" class="text-lg" />
           </button>
-          <button onClick={saveServerSettings} class="flex-1 font-bold py-3.5 rounded-xl text-xs uppercase tracking-widest text-black active:scale-95 transition-transform flex items-center justify-center gap-2" style="background: var(--p); box-shadow: 0 0 20px var(--p-glow)">
-            <Icon name="save" class="text-sm" /> Save Configuration
+          <button onClick={saveServerSettings} class="flex-1 font-bold py-3.5 rounded-xl text-xs uppercase tracking-widest text-black active:scale-95 transition-transform flex items-center justify-center gap-2 shrink-0" style="background: var(--p); box-shadow: 0 0 20px var(--p-glow)">
+            <Icon name="save" class="text-sm hidden sm:block" /> Save Config
           </button>
         </div>
       </div>
