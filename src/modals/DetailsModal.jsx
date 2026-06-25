@@ -993,7 +993,7 @@ export function DetailsModal(props) {
                           </div>
                         </Show>
 
-                        <Show when={!isPreview() && movie().media_type === 'tv' && movie().seasonDates && Object.keys(movie().seasonDates).some(k => movie().seasonDates[k].start || movie().seasonDates[k].end)}>
+                        <Show when={!isPreview() && movie().media_type === 'tv' && movie().seasonDates && Object.keys(movie().seasonDates).length > 0 && Object.keys(movie().seasonDates).some(k => movie().seasonDates[k].start || movie().seasonDates[k].end)}>
                             <div class="border-t border-white/5 pt-4 mt-2">
                                 <p class="text-[10px] uppercase font-black text-[var(--primary)] tracking-widest mb-2 flex items-center gap-1.5"><Icon name="history" class="text-[14px]"/> Season Timeline</p>
                                 <div class="space-y-1.5">
@@ -1150,7 +1150,7 @@ export function DetailsModal(props) {
 
       <Show when={personId()}>
         <PersonModal
-          personId={personId()}
+          id={personId()} 
           uid={props.uid}
           watchlist={props.watchlist}
           showToast={props.showToast}
