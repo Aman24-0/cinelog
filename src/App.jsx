@@ -149,7 +149,7 @@ export default function App() {
         <Show when={!loading() && !splashWait()} fallback={<LoadingScreen />}>
           
           {/* ─ HEADER ── */}
-          <header class={`sticky top-0 z-50 flex justify-between items-center px-6 py-4 ${detailsId() ? 'hidden' : ''}`}
+          <header class="sticky top-0 z-50 flex justify-between items-center px-6 py-4"
             style="background: #000; border-bottom: 1px solid rgba(255,255,255,0.08);">
             
             {/* Logo Container */}
