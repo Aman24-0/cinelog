@@ -110,7 +110,6 @@ function FolderEditModal(props) {
   );
 }
 
-// PDF Export Options Modal
 function SharePdfModal(props) {
   const [sort, setSort] = createSignal(props.currentSort);
   onMount(() => document.body.style.overflow = 'hidden');
@@ -120,32 +119,32 @@ function SharePdfModal(props) {
     <div class="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in" onClick={props.onClose}>
       <div class="bg-[#141414] border border-white/10 p-6 rounded-3xl w-full max-w-sm animate-pop-in shadow-2xl" onClick={e=>e.stopPropagation()}>
         <h3 class="text-white font-bold text-xl mb-2 flex items-center gap-2">
-          <Icon name="picture_as_pdf" style="color: var(--p)"/> Export as PDF
+          <Icon name="picture_as_pdf" style="color: var(--p)"/> Export Layout Order
         </h3>
-        <p class="text-xs text-gray-400 mb-5">Select the order you want the movies to appear in the generated PDF.</p>
+        <p class="text-xs text-gray-400 mb-5">Select the blueprint alignment sequence for compiling your printable ledger data.</p>
         
         <div class="flex flex-col gap-3 mb-6">
            <label class="flex items-center gap-3 text-white text-sm p-3 rounded-xl border border-white/5 bg-[#1a1a1a] cursor-pointer hover:border-[var(--p)] transition-all">
              <input type="radio" checked={sort()==='order'} onChange={()=>setSort('order')} class="accent-[var(--p)] w-4 h-4"/> 
-             Custom / Chronological Order
+             Custom Matrix Alignment
            </label>
            <label class="flex items-center gap-3 text-white text-sm p-3 rounded-xl border border-white/5 bg-[#1a1a1a] cursor-pointer hover:border-[var(--p)] transition-all">
              <input type="radio" checked={sort()==='year'} onChange={()=>setSort('year')} class="accent-[var(--p)] w-4 h-4"/> 
-             Release Year
+             Absolute Release Year
            </label>
            <label class="flex items-center gap-3 text-white text-sm p-3 rounded-xl border border-white/5 bg-[#1a1a1a] cursor-pointer hover:border-[var(--p)] transition-all">
              <input type="radio" checked={sort()==='grouped'} onChange={()=>setSort('grouped')} class="accent-[var(--p)] w-4 h-4"/> 
-             Collection-wise Groups
+             Structural Sub-Collections
            </label>
         </div>
 
         <div class="flex gap-2">
-          <button class="flex-[2] py-3 rounded-xl bg-[var(--p)] text-black font-bold text-xs uppercase tracking-widest active:scale-95 transition-transform shadow-[0_0_16px_var(--p-glow)]" onClick={()=>props.onExport(sort())}>Generate PDF</button>
+          <button class="flex-[2] py-3 rounded-xl bg-[var(--p)] text-black font-bold text-xs uppercase tracking-widest active:scale-95 transition-transform shadow-[0_0_16px_var(--p-glow)]" onClick={()=>props.onExport(sort())}>Compile PDF</button>
           <button class="flex-1 py-3 rounded-xl bg-[#1a1a1a] border border-white/10 text-gray-300 font-bold text-xs uppercase tracking-widest hover:bg-white/5 transition-all" onClick={props.onClose}>Cancel</button>
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 export function FranchisesView(props) {
@@ -277,13 +276,27 @@ export function FranchisesView(props) {
     }
   };
 
-  const moveMovie = async (index, dir, list = currentMovies(), folderId = currentFolder()) => {
+  // NEW DIRECT JUMP LOGIC
+  const jumpToPosition = async (oldIndex, m, list = currentMovies(), folderId = currentFolder()) => {
+    const input = prompt(`Move "${m.title || m.name}" to position (1 - ${list.length}):\n\nCurrent position: ${oldIndex + 1}`);
+    if (!input) return;
+    
+    const newPos = parseInt(input, 10);
+    if (isNaN(newPos) || newPos < 1 || newPos > list.length || newPos - 1 === oldIndex) {
+      return props.showToast("Invalid position.");
+    }
+
+    const newIndex = newPos - 1;
     let arr = [...list];
-    if (index + dir < 0 || index + dir >= arr.length) return;
+    
+    // Remove from old pos and insert at new pos
+    const [item] = arr.splice(oldIndex, 1);
+    arr.splice(newIndex, 0, item);
+
     const batch = writeBatch(db);
-    [arr[index], arr[index + dir]] = [arr[index + dir], arr[index]];
-    arr.forEach((m, i) => batch.update(doc(db, 'users', props.uid, 'watchlist', String(m.id)), { [`franchises.${folderId}`]: i + 1 }));
+    arr.forEach((mov, i) => batch.update(doc(db, 'users', props.uid, 'watchlist', String(mov.id)), { [`franchises.${folderId}`]: i + 1 }));
     await batch.commit();
+    props.showToast(`Moved to position ${newPos}`);
   };
 
   const removeFromFolder = async (m) => {
@@ -322,10 +335,11 @@ export function FranchisesView(props) {
   const handlePdfExport = (selectedSort) => {
     setSortMode(selectedSort);
     setShowShareModal(false);
-    props.showToast("Generating PDF...");
+    
+    // Give the DOM a moment to re-render the view with the new sort before popping the print dialog
     setTimeout(() => {
       window.print();
-    }, 600); // Wait for the DOM to update to the selected sort mode before printing
+    }, 300);
   };
 
   const folderCard = (f) => {
@@ -340,7 +354,7 @@ export function FranchisesView(props) {
           <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent z-10" />
         </Show>
         <div class="relative z-20 p-6 w-full flex flex-col justify-end"><div class="label-mono mb-1" style="color: var(--p)">Collection</div><h3 class="font-headline text-3xl text-white leading-tight drop-shadow-lg">{f.name}</h3><p class="label-mono mt-1" style="color: var(--muted)">{movieCount()} titles</p></div>
-        <button onClick={(e)=>{e.stopPropagation(); setEditingFolder(f);}} class="absolute top-4 right-16 z-30 w-10 h-10 rounded-full" style="background:rgba(0,0,0,.5);color:white"><Icon name="edit"/></button>
+        <button onClick={(e)=>{e.stopPropagation(); setEditingFolder(f);}} class="absolute top-4 right-16 z-30 w-10 h-10 rounded-full flex items-center justify-center" style="background:rgba(0,0,0,.5);color:white"><Icon name="edit"/></button>
         <button onClick={(e) => { e.stopPropagation(); confirm('Delete folder?') && deleteDoc(doc(db, 'users', props.uid, 'franchises', f.id)); }} class="absolute top-4 right-4 z-30 w-10 h-10 flex items-center justify-center rounded-full transition-all" style="background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.15); color: white"><Icon name="delete" class="text-lg" /></button>
       </div>
     );
@@ -348,7 +362,7 @@ export function FranchisesView(props) {
 
   return (
     <>
-      {/* ── STANDARD DARK UI (Hidden when printing) ── */}
+      {/* ── STANDARD DARK UI ── */}
       <div class="pb-10 animate-fade-in no-print">
         <div class="flex justify-between items-center mb-6">
           <h2 class="font-headline text-4xl text-white">LISTS</h2>
@@ -367,7 +381,7 @@ export function FranchisesView(props) {
         <Show when={currentFolder()}><button onClick={() => setCurrentFolder(null)} class="mb-6 glass-surface px-4 py-2 rounded-full text-white text-[10px] font-bold uppercase flex items-center gap-2 tracking-widest w-max active:scale-95" style="border-color: var(--border-active)"><Icon name="arrow_back" class="text-sm" /> Back</button></Show>
 
         <Show when={!currentFolder() && rootFolders().length > 0}><div class="flex flex-col gap-4 mb-10"><For each={rootFolders()}>{(f)=>folderCard(f)}</For></div></Show>
-        <Show when={currentFolder() && subFolders().length > 0 && sortMode() === 'grouped'}><div class="space-y-2 mb-6"><p class="label-mono">Sub Collections</p><For each={subFolders()}>{(f)=><div class="flex items-center justify-between rounded-xl p-3" style="background:var(--surface)"><button class="text-left font-bold text-white" onClick={()=>setCurrentFolder(f.id)}>{f.name}</button><button onClick={()=>setEditingFolder(f)} class="p-2 rounded-full hover:bg-white/5"><Icon name="edit"/></button></div>}</For></div></Show>
+        <Show when={currentFolder() && subFolders().length > 0 && sortMode() === 'grouped'}><div class="space-y-2 mb-6"><p class="label-mono">Sub Collections</p><For each={subFolders()}>{(f)=><div class="flex items-center justify-between rounded-xl p-3" style="background:var(--surface)"><button class="text-left font-bold text-white" onClick={()=>setCurrentFolder(f.id)}>{f.name}</button><button onClick={()=>setEditingFolder(f)} class="p-2 rounded-full hover:bg-white/5 flex items-center justify-center"><Icon name="edit"/></button></div>}</For></div></Show>
 
         <Show when={currentFolder()}>
           <div class="flex justify-between items-center mb-4 px-1 gap-2 flex-wrap">
@@ -392,8 +406,26 @@ export function FranchisesView(props) {
               <For each={flattenedMovies()}>
                 {(m, i) => (
                   <div class="flex items-center gap-3 rounded-2xl p-3 border transition-all" style="background: var(--surface); border-color: var(--border)">
-                    <Show when={sortMode() === 'order'}><div class="flex flex-col items-center rounded-xl p-1 shrink-0" style="background: var(--raised)"><button onClick={() => moveMovie(i(), -1, flattenedMovies(), currentFolder())} class={`transition-colors ${i() === 0 ? 'opacity-20 pointer-events-none' : 'hover:text-white'}`} style="color: var(--muted)"><Icon name="keyboard_arrow_up" class="text-lg" /></button><span class="label-mono" style="font-size: 9px; color: var(--p)">{i() + 1}</span><button onClick={() => moveMovie(i(), 1, flattenedMovies(), currentFolder())} class={`transition-colors ${i() === flattenedMovies().length - 1 ? 'opacity-20 pointer-events-none' : 'hover:text-white'}`} style="color: var(--muted)"><Icon name="keyboard_arrow_down" class="text-lg" /></button></div></Show>
-                    <div class="flex-1 flex items-center gap-3 cursor-pointer min-w-0" onClick={() => props.openMovie(m.id)}><img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} class="w-11 h-16 rounded-xl object-cover shadow-md shrink-0" /><div class="min-w-0"><p class="font-bold text-sm text-white truncate">{m.title || m.name}</p><p class="label-mono mt-1" style="font-size: 8px; color: var(--muted)">{(m.release_date || m.first_air_date || '').split('-')[0]}</p></div></div>
+                    
+                    {/* The new direct jump button */}
+                    <Show when={sortMode() === 'order'}>
+                      <button 
+                        onClick={() => jumpToPosition(i(), m, flattenedMovies(), currentFolder())} 
+                        class="w-10 h-10 rounded-xl flex items-center justify-center font-mono font-bold text-xs shrink-0 transition-all hover:scale-105 active:scale-95" 
+                        style="background: var(--raised); border: 1px solid var(--border-active); color: var(--p)"
+                        title="Click to jump to a specific position"
+                      >
+                        {i() + 1}
+                      </button>
+                    </Show>
+
+                    <div class="flex-1 flex items-center gap-3 cursor-pointer min-w-0" onClick={() => props.openMovie(m.id)}>
+                      <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} class="w-11 h-16 rounded-xl object-cover shadow-md shrink-0" />
+                      <div class="min-w-0">
+                        <p class="font-bold text-sm text-white truncate">{m.title || m.name}</p>
+                        <p class="label-mono mt-1" style="font-size: 8px; color: var(--muted)">{(m.release_date || m.first_air_date || '').split('-')[0]}</p>
+                      </div>
+                    </div>
                     <button onClick={() => removeFromFolder(m)} class="w-8 h-8 rounded-full flex items-center justify-center transition-all shrink-0" style="color: var(--muted)"><Icon name="remove_circle" class="text-lg" /></button>
                   </div>
                 )}
@@ -409,19 +441,21 @@ export function FranchisesView(props) {
         </Show>
       </div>
 
-      {/* ── PRINTABLE PDF UI (Hidden normally, shown only when printing) ── */}
+      {/* ── PRINTABLE PDF UI ── */}
       <Show when={currentFolder()}>
         <div class="print-only bg-white p-8 font-sans text-black min-h-screen">
           <h1 class="text-3xl font-black mb-1 text-black">{currentFolderData()?.name}</h1>
           <p class="text-gray-500 text-sm mb-6 pb-4 border-b border-gray-300">
-            Cinelog Vault Export • {sortMode() === 'year' ? 'Sorted by Release Year' : sortMode() === 'grouped' ? 'Grouped by Collection' : 'Custom Chronological Order'}
+            Cinelog Vault Data Ledger • {sortMode() === 'year' ? 'Sorted by Release Timeline' : sortMode() === 'grouped' ? 'Grouped by Sub-Collection Folders' : 'Custom Matrix Alignment Order'}
           </p>
 
           <Show when={sortMode() !== 'grouped'}>
             <div class="flex flex-col gap-2">
               <For each={flattenedMovies()}>{(m, i) => (
                 <div class="flex items-center gap-4 py-2 border-b border-gray-100 print-item">
-                  <span class="text-gray-400 font-mono text-sm w-6">{i() + 1}.</span>
+                  <span class="text-gray-400 font-mono text-sm w-6">
+                    {i() + 1}.
+                  </span>
                   <Show when={m.poster_path} fallback={<div class="w-10 h-14 bg-gray-200 rounded" />}>
                     <img src={`https://image.tmdb.org/t/p/w92${m.poster_path}`} class="w-10 h-14 object-cover rounded shadow-sm" />
                   </Show>
