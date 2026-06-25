@@ -110,10 +110,49 @@ function FolderEditModal(props) {
   );
 }
 
+// PDF Export Options Modal
+function SharePdfModal(props) {
+  const [sort, setSort] = createSignal(props.currentSort);
+  onMount(() => document.body.style.overflow = 'hidden');
+  onCleanup(() => document.body.style.overflow = '');
+
+  return (
+    <div class="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in" onClick={props.onClose}>
+      <div class="bg-[#141414] border border-white/10 p-6 rounded-3xl w-full max-w-sm animate-pop-in shadow-2xl" onClick={e=>e.stopPropagation()}>
+        <h3 class="text-white font-bold text-xl mb-2 flex items-center gap-2">
+          <Icon name="picture_as_pdf" style="color: var(--p)"/> Export as PDF
+        </h3>
+        <p class="text-xs text-gray-400 mb-5">Select the order you want the movies to appear in the generated PDF.</p>
+        
+        <div class="flex flex-col gap-3 mb-6">
+           <label class="flex items-center gap-3 text-white text-sm p-3 rounded-xl border border-white/5 bg-[#1a1a1a] cursor-pointer hover:border-[var(--p)] transition-all">
+             <input type="radio" checked={sort()==='order'} onChange={()=>setSort('order')} class="accent-[var(--p)] w-4 h-4"/> 
+             Custom / Chronological Order
+           </label>
+           <label class="flex items-center gap-3 text-white text-sm p-3 rounded-xl border border-white/5 bg-[#1a1a1a] cursor-pointer hover:border-[var(--p)] transition-all">
+             <input type="radio" checked={sort()==='year'} onChange={()=>setSort('year')} class="accent-[var(--p)] w-4 h-4"/> 
+             Release Year
+           </label>
+           <label class="flex items-center gap-3 text-white text-sm p-3 rounded-xl border border-white/5 bg-[#1a1a1a] cursor-pointer hover:border-[var(--p)] transition-all">
+             <input type="radio" checked={sort()==='grouped'} onChange={()=>setSort('grouped')} class="accent-[var(--p)] w-4 h-4"/> 
+             Collection-wise Groups
+           </label>
+        </div>
+
+        <div class="flex gap-2">
+          <button class="flex-[2] py-3 rounded-xl bg-[var(--p)] text-black font-bold text-xs uppercase tracking-widest active:scale-95 transition-transform shadow-[0_0_16px_var(--p-glow)]" onClick={()=>props.onExport(sort())}>Generate PDF</button>
+          <button class="flex-1 py-3 rounded-xl bg-[#1a1a1a] border border-white/10 text-gray-300 font-bold text-xs uppercase tracking-widest hover:bg-white/5 transition-all" onClick={props.onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function FranchisesView(props) {
   const [currentFolder, setCurrentFolder] = createSignal(null);
   const [sortMode, setSortMode] = createSignal('order');
   const [showAddModal, setShowAddModal] = createSignal(false);
+  const [showShareModal, setShowShareModal] = createSignal(false);
   const [bulkAdding, setBulkAdding] = createSignal(false);
   const [editingFolder, setEditingFolder] = createSignal(null);
 
@@ -280,6 +319,15 @@ export function FranchisesView(props) {
     } finally { setBulkAdding(false); }
   };
 
+  const handlePdfExport = (selectedSort) => {
+    setSortMode(selectedSort);
+    setShowShareModal(false);
+    props.showToast("Generating PDF...");
+    setTimeout(() => {
+      window.print();
+    }, 600); // Wait for the DOM to update to the selected sort mode before printing
+  };
+
   const folderCard = (f) => {
     const folderIds = () => new Set(getNestedFolderIds(f.id));
     const firstMovie = () => props.watchlist().find(m => m.franchises && Object.keys(m.franchises).some(fid => folderIds().has(fid)));
@@ -299,58 +347,125 @@ export function FranchisesView(props) {
   };
 
   return (
-    <div class="pb-10 animate-fade-in">
-      <div class="flex justify-between items-center mb-6">
-        <h2 class="font-headline text-4xl text-white">LISTS</h2>
-        <Show
-          when={!currentFolder()}
-          fallback={
-            <div class="flex items-center gap-2">
-              <button onClick={createFolder} class="px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 border" style="background: var(--surface); border-color: var(--border-active); color: var(--text)"><Icon name="create_new_folder" class="text-base" /> Sub Folder</button>
-              <button onClick={() => setShowAddModal(true)} class="px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 text-black" style="background: var(--p); box-shadow: 0 0 16px var(--p-glow)"><Icon name="playlist_add" class="text-base" /> Add Movie</button>
+    <>
+      {/* ── STANDARD DARK UI (Hidden when printing) ── */}
+      <div class="pb-10 animate-fade-in no-print">
+        <div class="flex justify-between items-center mb-6">
+          <h2 class="font-headline text-4xl text-white">LISTS</h2>
+          <Show
+            when={!currentFolder()}
+            fallback={
+              <div class="flex items-center gap-2">
+                <button onClick={createFolder} class="px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 border" style="background: var(--surface); border-color: var(--border-active); color: var(--text)"><Icon name="create_new_folder" class="text-base" /> Sub Folder</button>
+                <button onClick={() => setShowAddModal(true)} class="px-4 py-2 rounded-full text-xs font-bold flex items-center gap-1.5 text-black" style="background: var(--p); box-shadow: 0 0 16px var(--p-glow)"><Icon name="playlist_add" class="text-base" /> Add Movie</button>
+              </div>
+            }
+          >
+            <button onClick={createFolder} class="px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 border" style="background: var(--surface); border-color: var(--border-active); color: var(--text)"><Icon name="add" class="text-base" /> Folder</button>
+          </Show>
+        </div>
+        <Show when={currentFolder()}><button onClick={() => setCurrentFolder(null)} class="mb-6 glass-surface px-4 py-2 rounded-full text-white text-[10px] font-bold uppercase flex items-center gap-2 tracking-widest w-max active:scale-95" style="border-color: var(--border-active)"><Icon name="arrow_back" class="text-sm" /> Back</button></Show>
+
+        <Show when={!currentFolder() && rootFolders().length > 0}><div class="flex flex-col gap-4 mb-10"><For each={rootFolders()}>{(f)=>folderCard(f)}</For></div></Show>
+        <Show when={currentFolder() && subFolders().length > 0 && sortMode() === 'grouped'}><div class="space-y-2 mb-6"><p class="label-mono">Sub Collections</p><For each={subFolders()}>{(f)=><div class="flex items-center justify-between rounded-xl p-3" style="background:var(--surface)"><button class="text-left font-bold text-white" onClick={()=>setCurrentFolder(f.id)}>{f.name}</button><button onClick={()=>setEditingFolder(f)} class="p-2 rounded-full hover:bg-white/5"><Icon name="edit"/></button></div>}</For></div></Show>
+
+        <Show when={currentFolder()}>
+          <div class="flex justify-between items-center mb-4 px-1 gap-2 flex-wrap">
+            <h3 class="font-headline text-2xl text-white">Titles <span style="color: var(--p)">({sortMode()==='grouped' ? groupedByCollection().reduce((a,g)=>a+g.items.length,0) : flattenedMovies().length})</span></h3>
+            <div class="flex items-center gap-2 flex-wrap">
+              <Show when={currentFolderData()?.tmdbCollectionId}><button onClick={addMissingFromCollection} disabled={bulkAdding()} class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 disabled:opacity-50" style="background: var(--p-dim); border: 1px solid var(--p); color: var(--p)">{bulkAdding() ? 'Adding...' : 'Add Missing'}</button></Show>
+              
+              <button onClick={() => setShowShareModal(true)} class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 flex items-center gap-1 transition-all hover:bg-white/10" style="background: var(--surface); border: 1px solid var(--border); color: var(--text)">
+                <Icon name="ios_share" class="text-[14px]"/> Export
+              </button>
+
+              <div class="flex rounded-full border" style="border-color:var(--border-active)">
+                <button class="px-3 py-1.5 text-[10px]" onClick={()=>setSortMode('order')} style={sortMode()==='order'?'background:var(--p);color:#000;border-radius:999px':''}>Custom</button>
+                <button class="px-3 py-1.5 text-[10px]" onClick={()=>setSortMode('year')} style={sortMode()==='year'?'background:var(--p);color:#000;border-radius:999px':''}>Year</button>
+                <button class="px-3 py-1.5 text-[10px]" onClick={()=>setSortMode('grouped')} style={sortMode()==='grouped'?'background:var(--p);color:#000;border-radius:999px':''}>Collection</button>
+              </div>
             </div>
-          }
-        >
-          <button onClick={createFolder} class="px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-1.5 border" style="background: var(--surface); border-color: var(--border-active); color: var(--text)"><Icon name="add" class="text-base" /> Folder</button>
+          </div>
+
+          <Show when={sortMode() !== 'grouped'}>
+            <div class="space-y-3">
+              <For each={flattenedMovies()}>
+                {(m, i) => (
+                  <div class="flex items-center gap-3 rounded-2xl p-3 border transition-all" style="background: var(--surface); border-color: var(--border)">
+                    <Show when={sortMode() === 'order'}><div class="flex flex-col items-center rounded-xl p-1 shrink-0" style="background: var(--raised)"><button onClick={() => moveMovie(i(), -1, flattenedMovies(), currentFolder())} class={`transition-colors ${i() === 0 ? 'opacity-20 pointer-events-none' : 'hover:text-white'}`} style="color: var(--muted)"><Icon name="keyboard_arrow_up" class="text-lg" /></button><span class="label-mono" style="font-size: 9px; color: var(--p)">{i() + 1}</span><button onClick={() => moveMovie(i(), 1, flattenedMovies(), currentFolder())} class={`transition-colors ${i() === flattenedMovies().length - 1 ? 'opacity-20 pointer-events-none' : 'hover:text-white'}`} style="color: var(--muted)"><Icon name="keyboard_arrow_down" class="text-lg" /></button></div></Show>
+                    <div class="flex-1 flex items-center gap-3 cursor-pointer min-w-0" onClick={() => props.openMovie(m.id)}><img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} class="w-11 h-16 rounded-xl object-cover shadow-md shrink-0" /><div class="min-w-0"><p class="font-bold text-sm text-white truncate">{m.title || m.name}</p><p class="label-mono mt-1" style="font-size: 8px; color: var(--muted)">{(m.release_date || m.first_air_date || '').split('-')[0]}</p></div></div>
+                    <button onClick={() => removeFromFolder(m)} class="w-8 h-8 rounded-full flex items-center justify-center transition-all shrink-0" style="color: var(--muted)"><Icon name="remove_circle" class="text-lg" /></button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+
+          <Show when={sortMode() === 'grouped'}>
+            <div class="space-y-6">
+              <For each={groupedByCollection()}>{(group)=><div><h4 class="font-bold text-white mb-2">{group.name}</h4><div class="space-y-2"><For each={group.items}>{(m)=><div class="rounded-xl p-3 flex items-center gap-3" style="background:var(--surface)"><img src={`https://image.tmdb.org/t/p/w92${m.poster_path}`} class="w-10 h-14 rounded-lg object-cover"/><button class="text-left text-white font-bold truncate" onClick={()=>props.openMovie(m.id)}>{m.title || m.name}</button></div>}</For></div></div>}</For>
+            </div>
+          </Show>
         </Show>
       </div>
-      <Show when={currentFolder()}><button onClick={() => setCurrentFolder(null)} class="mb-6 glass-surface px-4 py-2 rounded-full text-white text-[10px] font-bold uppercase flex items-center gap-2 tracking-widest w-max active:scale-95" style="border-color: var(--border-active)"><Icon name="arrow_back" class="text-sm" /> Back</button></Show>
 
-      <Show when={!currentFolder() && rootFolders().length > 0}><div class="flex flex-col gap-4 mb-10"><For each={rootFolders()}>{(f)=>folderCard(f)}</For></div></Show>
-      <Show when={currentFolder() && subFolders().length > 0 && sortMode() === 'grouped'}><div class="space-y-2 mb-6"><p class="label-mono">Sub Collections</p><For each={subFolders()}>{(f)=><div class="flex items-center justify-between rounded-xl p-3" style="background:var(--surface)"><button class="text-left font-bold text-white" onClick={()=>setCurrentFolder(f.id)}>{f.name}</button><button onClick={()=>setEditingFolder(f)} class="p-2 rounded-full hover:bg-white/5"><Icon name="edit"/></button></div>}</For></div></Show>
-
+      {/* ── PRINTABLE PDF UI (Hidden normally, shown only when printing) ── */}
       <Show when={currentFolder()}>
-        <div class="flex justify-between items-center mb-4 px-1 gap-2">
-          <h3 class="font-headline text-2xl text-white">Titles <span style="color: var(--p)">({sortMode()==='grouped' ? groupedByCollection().reduce((a,g)=>a+g.items.length,0) : flattenedMovies().length})</span></h3>
-          <div class="flex items-center gap-2">
-            <Show when={currentFolderData()?.tmdbCollectionId}><button onClick={addMissingFromCollection} disabled={bulkAdding()} class="text-[10px] font-bold uppercase rounded-full px-3 py-1.5 disabled:opacity-50" style="background: var(--p-dim); border: 1px solid var(--p); color: var(--p)">{bulkAdding() ? 'Adding...' : 'Add Missing'}</button></Show>
-            <div class="flex rounded-full border" style="border-color:var(--border-active)">
-              <button class="px-3 py-1.5 text-[10px]" onClick={()=>setSortMode('order')} style={sortMode()==='order'?'background:var(--p);color:#000;border-radius:999px':''}>Custom</button>
-              <button class="px-3 py-1.5 text-[10px]" onClick={()=>setSortMode('year')} style={sortMode()==='year'?'background:var(--p);color:#000;border-radius:999px':''}>Year</button>
-              <button class="px-3 py-1.5 text-[10px]" onClick={()=>setSortMode('grouped')} style={sortMode()==='grouped'?'background:var(--p);color:#000;border-radius:999px':''}>Collection-wise</button>
-            </div>
-          </div>
-        </div>
+        <div class="print-only bg-white p-8 font-sans text-black min-h-screen">
+          <h1 class="text-3xl font-black mb-1 text-black">{currentFolderData()?.name}</h1>
+          <p class="text-gray-500 text-sm mb-6 pb-4 border-b border-gray-300">
+            Cinelog Vault Export • {sortMode() === 'year' ? 'Sorted by Release Year' : sortMode() === 'grouped' ? 'Grouped by Collection' : 'Custom Chronological Order'}
+          </p>
 
-        <Show when={sortMode() !== 'grouped'}>
-          <div class="space-y-3">
-            <For each={flattenedMovies()}>
-              {(m, i) => (
-                <div class="flex items-center gap-3 rounded-2xl p-3 border transition-all" style="background: var(--surface); border-color: var(--border)">
-                  <Show when={sortMode() === 'order'}><div class="flex flex-col items-center rounded-xl p-1 shrink-0" style="background: var(--raised)"><button onClick={() => moveMovie(i(), -1, flattenedMovies(), currentFolder())} class={`transition-colors ${i() === 0 ? 'opacity-20 pointer-events-none' : 'hover:text-white'}`} style="color: var(--muted)"><Icon name="keyboard_arrow_up" class="text-lg" /></button><span class="label-mono" style="font-size: 9px; color: var(--p)">{i() + 1}</span><button onClick={() => moveMovie(i(), 1, flattenedMovies(), currentFolder())} class={`transition-colors ${i() === flattenedMovies().length - 1 ? 'opacity-20 pointer-events-none' : 'hover:text-white'}`} style="color: var(--muted)"><Icon name="keyboard_arrow_down" class="text-lg" /></button></div></Show>
-                  <div class="flex-1 flex items-center gap-3 cursor-pointer min-w-0" onClick={() => props.openMovie(m.id)}><img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} class="w-11 h-16 rounded-xl object-cover shadow-md shrink-0" /><div class="min-w-0"><p class="font-bold text-sm text-white truncate">{m.title || m.name}</p><p class="label-mono mt-1" style="font-size: 8px; color: var(--muted)">{(m.release_date || m.first_air_date || '').split('-')[0]}</p></div></div>
-                  <button onClick={() => removeFromFolder(m)} class="w-8 h-8 rounded-full flex items-center justify-center transition-all shrink-0" style="color: var(--muted)"><Icon name="remove_circle" class="text-lg" /></button>
+          <Show when={sortMode() !== 'grouped'}>
+            <div class="flex flex-col gap-2">
+              <For each={flattenedMovies()}>{(m, i) => (
+                <div class="flex items-center gap-4 py-2 border-b border-gray-100 print-item">
+                  <span class="text-gray-400 font-mono text-sm w-6">{i() + 1}.</span>
+                  <Show when={m.poster_path} fallback={<div class="w-10 h-14 bg-gray-200 rounded" />}>
+                    <img src={`https://image.tmdb.org/t/p/w92${m.poster_path}`} class="w-10 h-14 object-cover rounded shadow-sm" />
+                  </Show>
+                  <div>
+                    <h3 class="font-bold text-base text-black leading-tight m-0">{m.title || m.name}</h3>
+                    <p class="text-xs text-gray-500 m-0 mt-0.5">{(m.release_date || m.first_air_date || '').split('-')[0]} • {m.media_type==='tv'?'Series':'Movie'}</p>
+                  </div>
                 </div>
-              )}
-            </For>
-          </div>
-        </Show>
+              )}</For>
+            </div>
+          </Show>
 
-        <Show when={sortMode() === 'grouped'}>
-          <div class="space-y-6">
-            <For each={groupedByCollection()}>{(group)=><div><h4 class="font-bold text-white mb-2">{group.name}</h4><div class="space-y-2"><For each={group.items}>{(m)=><div class="rounded-xl p-3 flex items-center gap-3" style="background:var(--surface)"><img src={`https://image.tmdb.org/t/p/w92${m.poster_path}`} class="w-10 h-14 rounded-lg object-cover"/><button class="text-left text-white font-bold truncate" onClick={()=>props.openMovie(m.id)}>{m.title || m.name}</button></div>}</For></div></div>}</For>
-          </div>
-        </Show>
+          <Show when={sortMode() === 'grouped'}>
+            <div class="space-y-6">
+              <For each={groupedByCollection()}>{(group) => (
+                <div class="print-item">
+                  <h2 class="text-lg font-bold border-b border-gray-300 pb-1 mb-2 text-black">{group.name}</h2>
+                  <div class="flex flex-col gap-1">
+                    <For each={group.items}>{(m) => (
+                      <div class="flex items-center gap-3 py-1.5 print-item">
+                        <Show when={m.poster_path} fallback={<div class="w-8 h-12 bg-gray-200 rounded" />}>
+                          <img src={`https://image.tmdb.org/t/p/w92${m.poster_path}`} class="w-8 h-12 object-cover rounded shadow-sm" />
+                        </Show>
+                        <div>
+                          <h3 class="font-bold text-sm text-black leading-tight m-0">{m.title || m.name}</h3>
+                          <p class="text-[10px] text-gray-500 m-0 mt-0.5">{(m.release_date || m.first_air_date || '').split('-')[0]}</p>
+                        </div>
+                      </div>
+                    )}</For>
+                  </div>
+                </div>
+              )}</For>
+            </div>
+          </Show>
+        </div>
+      </Show>
+
+      {/* ── MODALS ── */}
+      <Show when={showShareModal() && currentFolder()}>
+        <SharePdfModal 
+          currentSort={sortMode()} 
+          onClose={() => setShowShareModal(false)}
+          onExport={handlePdfExport}
+        />
       </Show>
 
       <Show when={showAddModal() && currentFolder()}>
@@ -374,6 +489,6 @@ export function FranchisesView(props) {
           parentOptions={folderParentOptions(editingFolder())}
         />
       </Show>
-    </div>
+    </>
   );
 }
