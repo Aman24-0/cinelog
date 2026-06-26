@@ -3,7 +3,7 @@ import { Icon, formatRuntime, getSafeGenres } from '../../utils';
 
 export function MediaHeader(props) {
 
-  // 🚀 FORMATTED SHARE WITH POSTER IMAGE LOGIC
+  // 🚀 FORMATTED SHARE WITH POSTER IMAGE LOGIC (FIXED FOR WHATSAPP)
   const handleShare = async () => {
     const title = props.movie?.title || props.movie?.name || 'Unknown Title';
     const isTv = props.movie?.media_type === 'tv';
@@ -20,31 +20,33 @@ export function MediaHeader(props) {
 
     const overview = props.details?.overview || props.movie?.overview || 'No overview available.';
 
-    // EXACT TEXT FORMATTING
-    const shareText = `${typeIcon} *${title}*\n\n*⭐ Rating: ${rating}/10*\n*🏷️ ${genres}*\n\n*📖 Introduction*\n${overview}\n\n*🍿 Watch now:*\nhttps://cinlog.netlify.app${props.movie?.id}*;
+    // EXACT TEXT FORMATTING (FIXED SYNTAX)
+    const shareText = `${typeIcon} *${title}*\n\n*⭐ Rating: ${rating}/10*\n*🏷️ ${genres}*\n\n*📖 Introduction*\n${overview}\n\n*🍿 Watch now:*\nhttps://cinlog.netlify.app/watch/${props.movie?.id}\n\n*📲 Download App:*\nhttps://cinlog.netlify.app`;
 
     if (navigator.share) {
       try {
+        if (props.showToast) props.showToast("Preparing poster... ⏳");
+
+        // NOTE: 'title' key removed. Only sending 'text' and 'files' to prevent WhatsApp from dropping the image.
         let shareData = {
-          title: title,
           text: shareText
         };
 
-        // 🖼️ TRY TO FETCH AND ATTACH POSTER IMAGE
+        // 🖼️ FETCH AND ATTACH POSTER IMAGE AS JPEG
         if (props.movie?.poster_path) {
-          if (props.showToast) props.showToast("Preparing image for share... ⏳");
           try {
             const response = await fetch(`https://image.tmdb.org/t/p/w500${props.movie.poster_path}`);
             const blob = await response.blob();
-            const file = new File([blob], `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_poster.jpg`, { type: blob.type });
             
-            // Check if device supports sharing files
+            // Force the MIME type to image/jpeg so WhatsApp natively accepts it
+            const file = new File([blob], 'poster.jpg', { type: 'image/jpeg' });
+            
             if (navigator.canShare && navigator.canShare({ files: [file] })) {
               shareData.files = [file];
             }
           } catch (imgErr) {
             console.log("Could not fetch image for sharing", imgErr);
-            // Ignore error and proceed to share text only
+            // Will fallback to text-only if image fails
           }
         }
 
