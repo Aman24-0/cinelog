@@ -1,3 +1,4 @@
+// src/components/MovieCard.jsx
 import { Show } from 'solid-js';
 import { Icon, formatRuntime } from '../utils';
 
@@ -19,8 +20,9 @@ export const MovieCard = (props) => (
         />
       </Show>
 
-      {/* Gradient overlay */}
-      <div class="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent opacity-90 pointer-events-none" />
+      {/* Gradient overlay — stronger bottom fade */}
+      <div class="absolute inset-0 pointer-events-none"
+        style="background: linear-gradient(to top, rgba(0,0,0,0.97) 0%, rgba(0,0,0,0.7) 38%, rgba(0,0,0,0.15) 65%, transparent 100%)" />
 
       {/* Status badge */}
       <div class="absolute top-2 left-2 tag-chip" style="color: var(--p)">
@@ -35,18 +37,22 @@ export const MovieCard = (props) => (
           </div>
         </Show>
       }>
-        <div class="absolute top-2 right-2 tag-chip max-w-[88px] truncate" style="color: var(--p); background: rgba(0,0,0,0.72); border-color: var(--p); box-shadow: 0 0 14px var(--p-glow)">
+        <div class="absolute top-2 right-2 tag-chip max-w-[88px] truncate"
+          style="color: var(--p); background: rgba(0,0,0,0.72); border-color: var(--p); box-shadow: 0 0 14px var(--p-glow)">
           New Season
         </div>
       </Show>
 
       {/* Bottom info */}
       <div class="absolute bottom-0 left-0 w-full p-3">
-        <h4 class="text-xs font-bold truncate text-white drop-shadow mb-1 leading-tight">
+        <h4 class="text-xs font-bold truncate text-white drop-shadow mb-1 leading-tight"
+          style="text-shadow: 0 1px 6px rgba(0,0,0,0.9)">
           {props.movie.title || props.movie.name}
         </h4>
-        <p class="label-mono mb-1.5" style="font-size: 8px; color: var(--muted)">
-          {(props.movie.release_date || '').split('-')[0] || 'N/A'}
+
+        <p class="label-mono mb-1.5 text-gray-300"
+          style="font-size: 8px; text-shadow: 0 1px 4px rgba(0,0,0,0.9)">
+          {(props.movie.release_date || props.movie.first_air_date || '').split('-')[0] || 'N/A'}
           {' · '}
           {props.movie.media_type === 'tv' ? 'Series' : 'Movie'}
           <Show when={props.movie.runtime > 0}>
@@ -56,14 +62,17 @@ export const MovieCard = (props) => (
 
         {/* Ratings row */}
         <div class="grid grid-cols-3 gap-1 w-full">
-          <span class="rating-pill" style="color: #f5c518">
+          <span class="rating-pill"
+            style="color: #f5c518; background: rgba(0,0,0,0.65); border: 1px solid rgba(245,197,24,0.25)">
             <Icon name="star" fill class="text-[10px]" />
             {props.movie.imdbRating || '-'}
           </span>
-          <span class="rating-pill text-red-400">
+          <span class="rating-pill"
+            style="color: #ff6b6b; background: rgba(0,0,0,0.65); border: 1px solid rgba(255,107,107,0.25)">
             🍅 {props.movie.rtRating || '-'}
           </span>
-          <span class="rating-pill" style="color: var(--p)">
+          <span class="rating-pill"
+            style="color: var(--p); background: rgba(0,0,0,0.65); border: 1px solid var(--p-dim)">
             <Icon name="person" fill class="text-[10px]" />
             {props.movie.rating || '-'}
           </span>
