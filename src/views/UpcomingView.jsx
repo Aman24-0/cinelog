@@ -3,6 +3,9 @@ import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Icon, cleanPlatform, TMDB_KEY, formatRuntime, SafeInfoRow } from '../utils';
 
+// Ported Details Modal Component
+import { DetailsModal } from '../modals/DetailsModal';
+
 function UpcomingDetailsModal(props) {
   const [details, setDetails] = createSignal(props.movie);
   const [trailerKey, setTrailerKey] = createSignal(null);
@@ -40,10 +43,22 @@ function UpcomingDetailsModal(props) {
   const runtimeVal = () => details().runtime || details().episode_run_time?.[0] || 0;
 
   return (
-    <div class="fixed inset-0 bg-black/95 flex items-center justify-center p-4 z-[999999] isolate animate-fade-in" onClick={props.onClose}>
-      <div class="w-full max-w-xl bg-[#0c0e14] rounded-3xl overflow-hidden border border-white/10 relative max-h-[90vh] shadow-2xl animate-pop-in flex flex-col" onClick={e => e.stopPropagation()}>
-        {/* Close button – positioned absolutely on the backdrop */}
-        <button onClick={props.onClose} class="absolute top-4 right-4 z-[1000000] bg-black/50 backdrop-blur-md border border-white/10 p-2.5 rounded-full hover:bg-black/80 active:scale-95 transition-all">
+    // FIXED: Ensured fixed position with immense z-index overrides EVERYTHING (including App header/navbars)
+    <div class="fixed inset-0 flex items-center justify-center p-0 sm:p-4 z-[99999999] animate-fade-in" onClick={props.onClose}>
+      
+      {/* Background Dimmer */}
+      <div class="absolute inset-0 bg-[#08090b] pointer-events-none">
+        <Show when={props.movie?.backdrop_path}>
+           <img src={`https://image.tmdb.org/t/p/w500${props.movie.backdrop_path}`} class="w-full h-full object-cover opacity-40 blur-3xl scale-125" />
+        </Show>
+        <div class="absolute inset-0 bg-black/80"></div>
+      </div>
+
+      {/* Main Modal Window */}
+      <div class="w-full max-w-xl bg-[#08090b]/80 backdrop-blur-3xl sm:rounded-[2.5rem] rounded-t-[2.5rem] mt-10 sm:mt-0 overflow-hidden border border-white/10 relative h-[100vh] sm:h-auto max-h-[95vh] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] animate-pop-in flex flex-col" onClick={e => e.stopPropagation()}>
+        
+        {/* Close button */}
+        <button onClick={props.onClose} class="absolute top-4 right-4 z-[100] bg-black/50 backdrop-blur-md border border-white/10 p-2.5 rounded-full hover:bg-black/80 active:scale-95 transition-all">
           <Icon name="close" class="text-sm text-white" />
         </button>
 
@@ -56,46 +71,53 @@ function UpcomingDetailsModal(props) {
               <Show when={details().backdrop_path} fallback={
                 <div class="w-full h-full flex items-center justify-center text-gray-700 bg-[#171921]"><Icon name="movie" class="text-6xl" /></div>
               }>
-                <img src={`https://image.tmdb.org/t/p/original${details().backdrop_path}`} class="w-full h-full object-cover opacity-40" />
+                <img src={`https://image.tmdb.org/t/p/original${details().backdrop_path}`} class="w-full h-full object-cover opacity-60" />
               </Show>
-              <div class="absolute inset-0 bg-gradient-to-t from-[#0c0e14] to-transparent pointer-events-none" />
+              <div class="absolute inset-0 bg-gradient-to-t from-[#08090b]/90 via-[#08090b]/40 to-transparent pointer-events-none" />
               <Show when={trailerKey()} fallback={
                 <div class="absolute bottom-4 left-4 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full text-[10px] font-bold text-gray-400 border border-white/5">No Video Available</div>
               }>
                 <button onClick={() => setPlayTrailer(true)} class="absolute inset-0 flex items-center justify-center z-10 group">
-                  <div class="w-14 h-14 bg-[var(--primary)]/30 backdrop-blur-md rounded-full flex items-center justify-center border border-[var(--primary)]/50 group-hover:scale-110 transition-transform shadow-lg">
-                    <Icon name="play_arrow" fill class="text-white text-3xl" />
+                  <div class="w-16 h-16 backdrop-blur-md rounded-full flex items-center justify-center border group-hover:scale-110 transition-transform shadow-2xl" style="background: var(--p-dim); border-color: rgba(255,255,255,0.1)">
+                    <Icon name="play_arrow" fill class="text-white text-4xl" />
                   </div>
                 </button>
               </Show>
             </Show>
           </div>
 
-          {/* Content – now below backdrop, no negative margin */}
-          <div class="p-6 md:px-8 pb-8 relative z-10">
-            <h2 class="text-3xl font-black drop-shadow-md mb-2">{details().title || details().name}</h2>
-            <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-6">
+          {/* Content */}
+          <div class="px-6 md:px-8 pb-32 sm:pb-8 -mt-16 relative z-10">
+            <h2 class="text-3xl font-black drop-shadow-md mb-2 leading-tight">{details().title || details().name}</h2>
+            <p class="text-[9px] text-gray-400 font-bold uppercase tracking-widest mt-1 mb-6">
               {details().release_date || details().first_air_date} • {props.movie.media_type === 'tv' ? 'SERIES' : 'MOVIE'}
               <Show when={runtimeVal() > 0}> • {formatRuntime(runtimeVal())}</Show>
             </p>
-            <p class="text-gray-400 text-sm mb-6 leading-relaxed">{details().overview || 'No overview available.'}</p>
-            <div class="glass-surface p-5 rounded-2xl border border-white/5 space-y-3 mb-6">
+            
+            <p class="text-gray-400 text-sm mb-6 leading-relaxed italic border-l-2 border-white/20 pl-3">{details().overview || 'No overview available.'}</p>
+            
+            <div class="glass-surface p-5 rounded-2xl border border-white/5 space-y-4 mb-6">
               <SafeInfoRow icon="format_list_bulleted" label="Genre" value={<span class="text-xs text-gray-300">{(details().genres || []).map(g => g.name).join(', ') || 'N/A'}</span>} />
               <SafeInfoRow icon="language" label="Language" value={<span class="text-xs text-gray-300">{(details().spoken_languages?.[0]?.english_name) || (details().original_language ? details().original_language.toUpperCase() : 'N/A')}</span>} />
-              <Show when={ottPlatform()}><SafeInfoRow icon="connected_tv" label="Platform" value={<span class="text-xs font-bold text-[var(--secondary)]">{ottPlatform()}</span>} /></Show>
+              <Show when={ottPlatform()}>
+                {/* FIXED THEME COLOR */}
+                <SafeInfoRow icon="connected_tv" label="Platform" value={<span class="text-[10px] font-black uppercase tracking-widest border px-2 py-0.5 rounded" style="background: var(--p-dim); border-color: var(--p); color: var(--p)">{ottPlatform()}</span>} />
+              </Show>
             </div>
+            
             <Show when={details().credits || details().created_by}>
               <div class="mb-8">
-                <h3 class="text-[10px] font-bold uppercase text-gray-500 tracking-widest mb-3 px-1">Cast & Crew</h3>
+                <h3 class="text-[10px] font-black uppercase text-gray-500 tracking-widest mb-4">Cast & Crew</h3>
                 <div class="flex gap-4 overflow-x-auto hide-scrollbar pb-2">
                   <Show when={details().credits?.crew?.find(c => c.job === 'Director') || details().created_by?.[0]}>
                     {(dir) => {
                       const d = dir();
                       return (
                         <div class="flex flex-col items-center min-w-[70px] shrink-0">
-                          <img src={d.profile_path ? `https://image.tmdb.org/t/p/w200${d.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${d.name}&backgroundColor=171921`} class="w-12 h-12 rounded-full object-cover border border-[var(--primary)] mb-2 bg-[#171921]" />
-                          <p class="text-[9px] font-bold text-center text-white truncate w-full">{d.name}</p>
-                          <p class="text-[8px] text-[var(--primary)] font-bold text-center uppercase tracking-widest mt-0.5">{details().created_by ? 'Creator' : 'Director'}</p>
+                          {/* FIXED THEME COLOR FOR DIRECTOR BORDER */}
+                          <img src={d.profile_path ? `https://image.tmdb.org/t/p/w200${d.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${d.name}&backgroundColor=171921`} class="w-16 h-16 rounded-full object-cover border-2 mb-2 bg-[#171921]" style="border-color: var(--p2, #fff)" />
+                          <p class="text-[9px] font-black text-center text-white truncate w-full">{d.name}</p>
+                          <p class="text-[7px] font-black text-center uppercase tracking-widest mt-0.5" style="color: var(--p2, #fff)">{details().created_by ? 'Creator' : 'Director'}</p>
                         </div>
                       );
                     }}
@@ -103,17 +125,19 @@ function UpcomingDetailsModal(props) {
                   <For each={details().credits?.cast?.slice(0, 5)}>
                     {(c) => (
                       <div class="flex flex-col items-center min-w-[70px] shrink-0">
-                        <img src={c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${c.name}&backgroundColor=171921`} class="w-12 h-12 rounded-full object-cover border border-white/10 mb-2 bg-[#171921]" />
-                        <p class="text-[9px] font-bold text-center text-white truncate w-full">{c.name}</p>
-                        <p class="text-[8px] text-gray-500 text-center uppercase truncate w-full mt-0.5">{c.character}</p>
+                        <img src={c.profile_path ? `https://image.tmdb.org/t/p/w200${c.profile_path}` : `https://api.dicebear.com/7.x/initials/svg?seed=${c.name}&backgroundColor=171921`} class="w-16 h-16 rounded-full object-cover border border-white/10 mb-2 bg-[#171921]" />
+                        <p class="text-[9px] font-black text-center text-white truncate w-full">{c.name}</p>
+                        <p class="text-[7px] text-gray-500 text-center uppercase truncate w-full mt-0.5 font-bold">{c.character}</p>
                       </div>
                     )}
                   </For>
                 </div>
               </div>
             </Show>
-            <button onClick={props.onAdd} class="w-full bg-[var(--primary)] text-[#0c0e14] font-bold py-4 rounded-xl text-sm uppercase tracking-widest flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-lg shadow-[var(--primary)]/20">
-              <Icon name="add_circle" fill /> Add to Vault
+
+            {/* FIXED ADD TO VAULT BUTTON (Theme Colors) */}
+            <button onClick={props.onAdd} class="w-full mt-2 font-black py-4 px-5 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform flex items-center justify-center gap-2 border" style="background: var(--p); color: #05060a; border-color: var(--p); box-shadow: 0 0 24px var(--p-glow); min-height: 52px; opacity: 1; visibility: visible">
+              <Icon name="add_circle" class="text-lg"/> Add to My Universe
             </button>
           </div>
         </div>
@@ -255,9 +279,9 @@ export function UpcomingView(props) {
         </div>
       </Show>
       <div class="flex justify-center mb-8">
-        <div class="glass-surface p-2 pr-6 rounded-[2rem] flex items-center gap-4 border border-white/10 focus-within:border-[var(--primary)]/50 transition-colors shadow-xl relative overflow-hidden">
-          <div class="absolute inset-0 bg-gradient-to-r from-[var(--primary)]/10 to-transparent pointer-events-none"></div>
-          <div class="bg-[var(--primary)] w-12 h-12 rounded-full flex items-center justify-center shadow-[0_0_15px_var(--primary)] relative z-10"><Icon name="calendar_month" class="text-[#0c0e14] text-xl" /></div>
+        <div class="glass-surface p-2 pr-6 rounded-[2rem] flex items-center gap-4 border border-white/10 focus-within:border-[var(--p)]/50 transition-colors shadow-xl relative overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-r pointer-events-none" style="background: linear-gradient(to right, var(--p-dim), transparent)"></div>
+          <div class="w-12 h-12 rounded-full flex items-center justify-center relative z-10" style="background: var(--p); box-shadow: 0 0 15px var(--p-glow)"><Icon name="calendar_month" class="text-[#0c0e14] text-xl" /></div>
           <div class="flex flex-col relative z-10">
             <span class="text-[9px] uppercase font-black text-gray-400 tracking-widest mb-0.5">Scan Radar From</span>
             <input type="date" value={selectedDate()} onInput={e => setSelectedDate(e.target.value)} class="bg-transparent border-none outline-none text-white font-black text-sm [color-scheme:dark] p-0 m-0 w-32" />
@@ -274,21 +298,21 @@ export function UpcomingView(props) {
                 const month = new Date(m.calc_date).toLocaleString('default', { month: 'short' });
                 return (
                   <div onClick={() => setPreviewMovie(m)} class="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group cursor-pointer">
-                    <div class="flex items-center justify-center w-10 h-10 rounded-full bg-[#08090b] border-4 border-[var(--primary)] shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 shadow-[0_0_15px_var(--primary)] z-10 ml-5 md:ml-0 overflow-hidden">
+                    <div class="flex items-center justify-center w-10 h-10 rounded-full bg-[#08090b] border-4 shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2 z-10 ml-5 md:ml-0 overflow-hidden transition-all" style="border-color: var(--p); box-shadow: 0 0 15px var(--p-glow)">
                       <div class="flex flex-col items-center justify-center leading-none">
                         <span class="text-[10px] font-black text-white">{day}</span>
-                        <span class="text-[7px] font-bold text-[var(--primary)] uppercase">{month}</span>
+                        <span class="text-[7px] font-bold uppercase" style="color: var(--p)">{month}</span>
                       </div>
                     </div>
-                    <div class="w-[calc(100%-5rem)] md:w-[calc(50%-3rem)] glass-surface p-3 rounded-[1.5rem] border border-white/5 hover:border-[var(--primary)]/50 transition-all shadow-lg flex gap-4 animate-pop-in">
+                    <div class="w-[calc(100%-5rem)] md:w-[calc(50%-3rem)] glass-surface p-3 rounded-[1.5rem] border border-white/5 transition-all shadow-lg flex gap-4 animate-pop-in hover:bg-white/[0.02]" style="border-color: var(--border-active)">
                       <Show when={m.poster_path} fallback={<div class="w-16 h-24 bg-[#171921] rounded-xl flex items-center justify-center"><Icon name="movie" class="text-gray-600" /></div>}>
                         <img src={`https://image.tmdb.org/t/p/w200${m.poster_path}`} class="w-16 h-24 rounded-xl object-cover shadow-md bg-[#171921]" />
                       </Show>
                       <div class="flex-1 flex flex-col justify-center py-1 min-w-0">
-                        <p class="font-bold text-sm text-gray-100 line-clamp-2 group-hover:text-[var(--primary)] transition-colors">{m.title}</p>
+                        <p class="font-bold text-sm text-gray-100 line-clamp-2 transition-colors" style="group-hover:color: var(--p)">{m.title}</p>
                         <div class="flex items-center gap-2 mt-2">
                           <Show when={m.media_type === 'tv'} fallback={<span class="text-[8px] bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-1 rounded font-black uppercase tracking-widest flex items-center gap-1 w-max"><Icon name="theaters" class="text-[10px]"/> Theatrical</span>}>
-                            <span class="text-[8px] bg-[var(--primary)]/20 text-[var(--primary)] border border-[var(--primary)]/30 px-2 py-1 rounded font-black uppercase tracking-widest flex items-center gap-1 w-max"><Icon name="tv" class="text-[10px]"/> {m.epTag || 'Series Drop'}</span>
+                            <span class="text-[8px] border px-2 py-1 rounded font-black uppercase tracking-widest flex items-center gap-1 w-max" style="background: var(--p-dim); color: var(--p); border-color: var(--p)"><Icon name="tv" class="text-[10px]"/> {m.epTag || 'Series Drop'}</span>
                           </Show>
                         </div>
                       </div>
@@ -306,11 +330,12 @@ export function UpcomingView(props) {
           </div>
         </Show>
       }>
-        <div class="text-center p-12 flex flex-col items-center gap-4 text-[var(--primary)] animate-pulse font-bold text-sm tracking-widest uppercase">
+        <div class="text-center p-12 flex flex-col items-center gap-4 animate-pulse font-bold text-sm tracking-widest uppercase" style="color: var(--p)">
           <Icon name="radar" class="text-5xl animate-spin" /> Scanning Radar...
         </div>
       </Show>
 
+      {/* Render the details modal natively so it escapes parent clipping */}
       <Show when={previewMovie()}>
         <UpcomingDetailsModal movie={previewMovie()} onClose={() => setPreviewMovie(null)} onAdd={() => handleAdd(previewMovie())} />
       </Show>
