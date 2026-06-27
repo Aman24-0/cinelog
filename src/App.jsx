@@ -152,17 +152,18 @@ export default function App() {
             style="background: #000; border-bottom: 1px solid rgba(255,255,255,0.08);">
             
             {/* Logo Container */}
-            <div class="flex items-center gap-3">
-              <div class="flex items-center gap-2">
-                <div class="w-8 h-8 rounded-xl flex items-center justify-center"
-                  style="background: var(--p-dim); border: 1px solid var(--border-active)">
-                  <Icon name="movie_filter" fill class="text-sm" style="color: var(--p)" />
-                </div>
-                <h2 class="font-headline text-2xl text-white leading-none">
-                  CINE<span style="color: var(--p)">LOG</span>
-                </h2>
-              </div>
-            </div>
+<div class="flex items-center gap-3">
+  <div class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform"
+    onClick={() => window.location.reload()}>
+    <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+      style="background: var(--p-dim); border: 1px solid var(--border-active)">
+      <Icon name="movie_filter" fill class="text-sm" style="color: var(--p)" />
+    </div>
+    <h2 class="font-headline text-2xl text-white leading-none">
+      CINE<span style="color: var(--p)">LOG</span>
+    </h2>
+  </div>
+</div>
 
             {/* Header Controls */}
             <div class="flex items-center gap-3">
