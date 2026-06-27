@@ -152,7 +152,6 @@ export function DetailsModal(props) {
     expandedEpisodes, setExpandedEpisodes,
     watchedEpisodes,
     tvSeasons,
-    selectedSeasonData,
     selectedSeasonEpisodes,
     episodeDocId,
     getEpisodesForSeason,
