@@ -1,4 +1,3 @@
-// src/App.jsx
 import { createSignal, createEffect, onMount, onCleanup, ErrorBoundary, Show } from 'solid-js';
 import { collection, onSnapshot, query, orderBy, writeBatch, getDocs } from 'firebase/firestore';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut } from 'firebase/auth';
@@ -149,7 +148,7 @@ export default function App() {
         <Show when={!loading() && !splashWait()} fallback={<LoadingScreen />}>
           
           {/* ─ HEADER ── */}
-          <header class="sticky top-0 z-50 flex justify-between items-center px-6 py-4"
+          <header class="sticky top-0 z-[100] flex justify-between items-center px-6 py-4"
             style="background: #000; border-bottom: 1px solid rgba(255,255,255,0.08);">
             
             {/* Logo Container */}
@@ -228,7 +227,7 @@ export default function App() {
           </div>
 
           {/* ── MOBILE BOTTOM NAV ── */}
-          <nav class="fixed bottom-0 left-0 w-full z-50 flex lg:hidden bottom-nav-bar h-16">
+          <nav class="fixed bottom-0 left-0 w-full z-[100] flex lg:hidden bottom-nav-bar h-16">
             <NavBtn icon="dashboard" label="Home" active={view() === 'dashboard'} onClick={() => setView('dashboard')} />
             <NavBtn icon="visibility" label="Vault" active={view() === 'watchlist'} onClick={() => setView('watchlist')} />
             <NavBtn icon="search" label="Search" active={searchModal()} onClick={() => { setSearchInitialQuery(''); setSearchModal(true); }} />
@@ -291,11 +290,14 @@ export default function App() {
             </button>
           </Show>
 
-          {/* ── TOAST ── */}
+          {/* ── GLOBAL TOAST BANNER (FIXED POSITIONING) ── */}
           <Show when={toast().show}>
-            <div class="fixed bottom-28 left-1/2 -translate-x-1/2 glass-surface px-6 py-3 rounded-full shadow-2xl z-[999999] flex gap-2 items-center text-sm font-bold whitespace-nowrap animate-pop-in"
-              style="border-color: var(--p); color: var(--text)">
-              <Icon name="check_circle" fill style="color: var(--p)" /> {toast().msg}
+            {/* Wrapper added to guarantee absolute horizontal centering independent of other fixed elements */}
+            <div class="fixed inset-x-0 bottom-28 pointer-events-none flex justify-center z-[10000000]">
+              <div class="glass-surface px-6 py-3 rounded-full shadow-2xl flex gap-2 items-center text-sm font-bold whitespace-nowrap animate-pop-in border"
+                style="border-color: var(--p); color: var(--text)">
+                <Icon name="check_circle" fill style="color: var(--p)" /> {toast().msg}
+              </div>
             </div>
           </Show>
 
