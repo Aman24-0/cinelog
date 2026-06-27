@@ -15,21 +15,11 @@ import { CastCrewList } from '../components/details/CastCrewList';
 import { InfoGrid } from '../components/details/InfoGrid';
 import { EditForm } from '../components/details/EditForm';
 
-// ✅ Hooks — properly imported, no hardcoded duplicates below
+// Hooks
 import { useWatchProgress } from '../hooks/useWatchProgress';
 import { useTmdbDetails } from '../hooks/useTmdbDetails';
 import { useOmdbRatings } from '../hooks/useOmdbRatings';
 import { useEpisodeTracking } from '../hooks/useEpisodeTracking';
-
-const DEFAULT_SERVERS = [
-  { id: 'vidzee',    name: 'VidZee (Fast)',       movieUrl: 'https://player.vidzee.wtf/embed/movie/{id}',                                  tvUrl: 'https://player.vidzee.wtf/embed/tv/{id}/{season}/{episode}',                              icon: 'smart_display' },
-  { id: 'vidlink',   name: 'VidLink',              movieUrl: 'https://vidlink.pro/movie/{id}?primaryColor=b1a1ff&autoplay=false',            tvUrl: 'https://vidlink.pro/tv/{id}/{season}/{episode}?primaryColor=b1a1ff&autoplay=false',        icon: 'play_circle'   },
-  { id: 'vidsrcru',  name: 'Vidsrc.ru',            movieUrl: 'https://vidsrc.ru/movie/{id}?autoplay=true&colour=b1a1ff',                    tvUrl: 'https://vidsrc.ru/tv/{id}/{season}/{episode}?autoplay=true&colour=b1a1ff&autonextepisode=true', icon: 'dns'        },
-  { id: 'peachify',  name: 'Peachify',             movieUrl: 'https://peachify.top/embed/movie/{id}?accent=b1a1ff',                         tvUrl: 'https://peachify.top/embed/tv/{id}/{season}/{episode}?accent=b1a1ff',                      icon: 'stream'        },
-  { id: 'vidsrccc',  name: 'Vidsrc.cc',            movieUrl: 'https://vidsrc.cc/v2/embed/movie/{id}',                                       tvUrl: 'https://vidsrc.cc/v2/embed/tv/{id}/{season}/{episode}',                                    icon: 'dynamic_feed'  },
-  { id: 'autoembed', name: 'AutoEmbed',             movieUrl: 'https://autoembed.co/movie/tmdb/{id}',                                        tvUrl: 'https://autoembed.co/tv/tmdb/{id}-{season}-{episode}',                                    icon: 'bolt'          },
-  { id: 'vidnest',   name: 'VidNest (Official)',   movieUrl: 'https://vidnest.fun/movie/{id}',                                              tvUrl: 'https://vidnest.fun/tv/{id}/{season}/{episode}',                                           icon: 'play_circle'   },
-];
 
 const calculateDays = (start, end) => {
   if (!start || !end) return null;
@@ -41,7 +31,6 @@ const calculateDays = (start, end) => {
 };
 
 export function DetailsModal(props) {
-  // ─── Identity / routing ───────────────────────────────────────────────────
   const isPreview  = createMemo(() => typeof props.id === 'string' && props.id.startsWith('PREVIEW_'));
   const isResume   = createMemo(() => typeof props.id === 'string' && props.id.startsWith('RESUME_'));
   const previewData = createMemo(() => {
@@ -59,11 +48,10 @@ export function DetailsModal(props) {
     overrideItem() || (isPreview() ? previewData() : props.watchlist?.find(m => String(m.id) === String(baseId())))
   );
 
-  // ─── Local UI state ───────────────────────────────────────────────────────
   const [isEdit,              setIsEdit]              = createSignal(false);
   const [playTrailer,         setPlayTrailer]         = createSignal(false);
   const [showPlayer,          setShowPlayer]          = createSignal(false);
-  const [activeServer,        setActiveServer]        = createSignal(null);
+  const [activeServer,        setActiveServer]        = createSignal('DIRECT_PLAY');
   const [personId,            setPersonId]            = createSignal(null);
   const [omdbData,            setOmdbData]            = createSignal({ imdb: '-', rt: '-' });
   const [customServers,       setCustomServers]       = createSignal({});
@@ -76,7 +64,6 @@ export function DetailsModal(props) {
     platforms: '', genres: '', seasonDates: {},
   });
 
-  // ─── Watch-progress signals (passed into useWatchProgress) ────────────────
   const [watchProgress,       setWatchProgress]       = createSignal(null);
   const [contentDuration,     setContentDuration]     = createSignal(0);
   const [playerSessionStart,  setPlayerSessionStart]  = createSignal(null);
@@ -84,14 +71,8 @@ export function DetailsModal(props) {
   const [receivedRealProgress,setReceivedRealProgress]= createSignal(false);
 
   let autoPlayTriggered = false;
+  let inferDurationSeconds = () => 0; 
 
-  // ─── inferDurationSeconds (shared by multiple hooks) ─────────────────────
-  // Keep it here because it depends on `details` (from useTmdbDetails) and
-  // `movie`, and both hooks need it as a dependency.
-  // We forward it after useTmdbDetails is constructed below.
-  let inferDurationSeconds = () => 0; // will be replaced after details signal exists
-
-  // ─── useTmdbDetails ───────────────────────────────────────────────────────
   const { details, trailerKey, richPlatforms, similarItems } = useTmdbDetails(movie, {
     uid:             props.uid,
     isGuest:         props.isGuest,
@@ -100,7 +81,6 @@ export function DetailsModal(props) {
     setContentDuration,
   });
 
-  // Now that `details` exists, define the real inferDurationSeconds
   inferDurationSeconds = () => {
     const d    = details();
     const mins = d?.runtime || d?.episode_run_time?.[0] || movie()?.runtime || 0;
@@ -109,71 +89,29 @@ export function DetailsModal(props) {
     return movie()?.media_type === 'tv' ? 45 * 60 : 120 * 60;
   };
 
-  // ─── useOmdbRatings ───────────────────────────────────────────────────────
   useOmdbRatings(movie, setOmdbData, props.uid, isPreview, props.isGuest);
 
-  // ─── useWatchProgress ─────────────────────────────────────────────────────
-  const {
-    primePlaybackProgress,
-    handlePlayerMessages,
-    hydrateSessionProgressFromElapsed,
-    saveProgressToDb,
-  } = useWatchProgress({
-    movie,
-    isPreview,
-    isGuest:              props.isGuest,
-    uid:                  props.uid,
-    activeServer,
-    watchProgress,
-    setWatchProgress,
-    contentDuration,
-    setContentDuration,
-    playerSessionStart,
-    setPlayerSessionStart,
-    playerStartProgress,
-    setPlayerStartProgress,
-    receivedRealProgress,
-    setReceivedRealProgress,
-    currentSeasonNumber:  () => parseInt(form().season  || movie()?.season  || 1) || 1,
-    currentEpisodeNumber: () => parseInt(form().episode || movie()?.episode || 1) || 1,
-    inferDurationSeconds,
-    showToast:            props.showToast,
-  });
-
-  // Convenience memos used in JSX and episode tracking
   const currentSeasonNumber  = createMemo(() => parseInt(form().season  || movie()?.season  || 1) || 1);
   const currentEpisodeNumber = createMemo(() => parseInt(form().episode || movie()?.episode || 1) || 1);
 
-  // ─── useEpisodeTracking ───────────────────────────────────────────────────
   const {
-    selectedSeason, setSelectedSeason,
-    seasonEpisodes,
-    seasonsLoading,
-    expandedEpisodes, setExpandedEpisodes,
-    watchedEpisodes,
-    tvSeasons,
-    selectedSeasonEpisodes,
-    episodeDocId,
-    getEpisodesForSeason,
-    loadWatchedEpisodes,
-    fetchSeasonEpisodes,
-    toggleEpisodeWatched,
-  } = useEpisodeTracking({
-    movie,
-    details,
-    isPreview,
-    isGuest:              props.isGuest,
-    uid:                  props.uid,
-    activeServer,
-    inferDurationSeconds,
-    setForm,
-    setWatchProgress,
-    setPlayerStartProgress,
-    showToast:            props.showToast,
-    onLogin:              props.onLogin,
+    primePlaybackProgress, handlePlayerMessages, hydrateSessionProgressFromElapsed, saveProgressToDb,
+  } = useWatchProgress({
+    movie, isPreview, isGuest: props.isGuest, uid: props.uid, activeServer, watchProgress, setWatchProgress,
+    contentDuration, setContentDuration, playerSessionStart, setPlayerSessionStart, playerStartProgress,
+    setPlayerStartProgress, receivedRealProgress, setReceivedRealProgress,
+    currentSeasonNumber, currentEpisodeNumber, inferDurationSeconds, showToast: props.showToast,
   });
 
-  // ─── getCurrentEpisode (needs getEpisodesForSeason from hook) ────────────
+  const {
+    selectedSeason, setSelectedSeason, seasonEpisodes, seasonsLoading, expandedEpisodes, setExpandedEpisodes,
+    watchedEpisodes, tvSeasons, selectedSeasonEpisodes, episodeDocId, getEpisodesForSeason,
+    loadWatchedEpisodes, fetchSeasonEpisodes, toggleEpisodeWatched,
+  } = useEpisodeTracking({
+    movie, details, isPreview, isGuest: props.isGuest, uid: props.uid, activeServer, inferDurationSeconds,
+    setForm, setWatchProgress, setPlayerStartProgress, showToast: props.showToast, onLogin: props.onLogin,
+  });
+
   const getCurrentEpisode = () => {
     const season  = currentSeasonNumber();
     const episode = currentEpisodeNumber();
@@ -183,25 +121,19 @@ export function DetailsModal(props) {
     );
   };
 
-  // ─── Available servers (custom overrides + defaults) ──────────────────────
+  // ✅ ONLY PULLS FROM USER DB - NO DEFAULTS HARDCODED
   const availableServers = createMemo(() => {
     const custom = customServers();
-    const merged = [];
-    DEFAULT_SERVERS.forEach(s => {
-      const overrides = custom[s.id];
-      if (!overrides || overrides.enabled !== false) {
-        merged.push({ ...s, name: overrides?.name || s.name, movieUrl: overrides?.movieUrl || s.movieUrl, tvUrl: overrides?.tvUrl || s.tvUrl });
-      }
-    });
-    Object.keys(custom).forEach(key => {
-      if (!DEFAULT_SERVERS.find(s => s.id === key) && custom[key].enabled !== false) {
-        merged.push({ id: key, name: custom[key].name || 'Custom Server', movieUrl: custom[key].movieUrl || '', tvUrl: custom[key].tvUrl || '', icon: 'add_link' });
-      }
-    });
-    return merged;
+    return Object.keys(custom).filter(key => custom[key].enabled !== false).map(key => ({
+      id: key,
+      name: custom[key].name || 'Custom Server',
+      type: custom[key].type || 'multi',
+      movieUrl: custom[key].movieUrl || '',
+      tvUrl: custom[key].tvUrl || '',
+      icon: 'dns'
+    }));
   });
 
-  // Auto-select first server when list changes
   createEffect(() => {
     const list = availableServers();
     if (list.length > 0 && !list.find(s => s.id === activeServer()) && activeServer() !== 'DIRECT_PLAY') {
@@ -209,25 +141,22 @@ export function DetailsModal(props) {
     }
   });
 
-  // ─── Auto-resume playback when opened as RESUME_ link ────────────────────
   createEffect(() => {
     if (isResume() && movie() && !autoPlayTriggered) {
-      const serversList = availableServers();
-      if (serversList.length > 0) {
-        autoPlayTriggered = true;
-        const savedServer = movie().watchProgress?.server;
-        if (savedServer && (serversList.find(s => s.id === savedServer) || savedServer === 'DIRECT_PLAY')) {
-          setActiveServer(savedServer);
-        }
-        setTimeout(() => {
-          primePlaybackProgress();
-          setShowPlayer(true);
-        }, 200);
+      autoPlayTriggered = true;
+      const savedServer = movie().watchProgress?.server;
+      if (savedServer && (availableServers().find(s => s.id === savedServer) || savedServer === 'DIRECT_PLAY')) {
+        setActiveServer(savedServer);
+      } else {
+        setActiveServer('DIRECT_PLAY');
       }
+      setTimeout(() => {
+        primePlaybackProgress();
+        setShowPlayer(true);
+      }, 200);
     }
   });
 
-  // ─── Load custom servers from Firestore on mount ──────────────────────────
   onMount(async () => {
     if (!props.isGuest) {
       try {
@@ -237,7 +166,6 @@ export function DetailsModal(props) {
     }
   });
 
-  // ─── TV season auto-select ────────────────────────────────────────────────
   createEffect(() => {
     if (movie()?.media_type !== 'tv') return;
     const seasons = tvSeasons();
@@ -247,27 +175,22 @@ export function DetailsModal(props) {
     if (!selectedSeason()) setSelectedSeason(exists ? preferred : Number(seasons[0].season_number));
   });
 
-  // Fetch episodes when selected season changes
   createEffect(() => {
     const seasonNumber = selectedSeason();
     if (movie()?.media_type === 'tv' && seasonNumber) fetchSeasonEpisodes(seasonNumber);
   });
 
-  // Load watched episodes when movie changes
   createEffect(() => {
     const m = movie();
     if (m?.media_type === 'tv' && !isPreview()) loadWatchedEpisodes();
   });
 
-  // ─── Per-movie directPlayUrl + similar items ──────────────────────────────
   createEffect(() => {
     const m = movie();
     if (!m?.id) return;
-    // Load per-movie direct URL: Firebase first, then localStorage fallback
     setDirectPlayUrl(m.directPlayUrl || localStorage.getItem(`cinelog_direct_url_${m.id}`) || '');
   });
 
-  // ─── Register/remove iframe message listener ──────────────────────────────
   onMount(() => {
     document.body.style.overflow = 'hidden';
     window.addEventListener('message', handlePlayerMessages);
@@ -279,7 +202,6 @@ export function DetailsModal(props) {
     window.removeEventListener('message', handlePlayerMessages);
   });
 
-  // ─── Form hydration when movie changes ───────────────────────────────────
   createEffect(() => {
     if (movie() && !isPreview() && !props.isGuest) {
       setForm({
@@ -298,7 +220,6 @@ export function DetailsModal(props) {
     }
   });
 
-  // ─── Misc memos ───────────────────────────────────────────────────────────
   const allAvailablePlatforms = createMemo(() =>
     [...new Set((props.watchlist || []).flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort()
   );
@@ -316,7 +237,6 @@ export function DetailsModal(props) {
     props.franchises?.filter(f => movie()?.franchises?.[f.id] !== undefined).map(f => f.name).join(', ')
   );
 
-  // ─── Edit form helpers ────────────────────────────────────────────────────
   const togglePlatform = (p) => {
     let curr = form().platforms.split(',').map(s => s.trim()).filter(Boolean);
     curr = curr.includes(p) ? curr.filter(x => x !== p) : [...curr, p];
@@ -354,7 +274,6 @@ export function DetailsModal(props) {
     setIsEdit(false);
   };
 
-  // ─── Add to vault from preview ────────────────────────────────────────────
   const addToVaultFromPreview = async () => {
     if (props.isGuest) { if (props.showToast) props.showToast("Sign in to add to Vault! 🔒"); if (props.onLogin) props.onLogin(); return; }
     const item = movie();
@@ -375,7 +294,6 @@ export function DetailsModal(props) {
     } catch { if (props.showToast) props.showToast("Error adding to vault."); }
   };
 
-  // ─── Stream URL builder ───────────────────────────────────────────────────
   const getStreamUrl = (serverId) => {
     if (serverId === 'DIRECT_PLAY') return directPlayUrl();
     if (!serverId) return '';
@@ -407,7 +325,6 @@ export function DetailsModal(props) {
       + timeParam;
   };
 
-  // ─── JSX ──────────────────────────────────────────────────────────────────
   return (
     <div class="fixed inset-0 z-[999999] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in" onClick={props.onClose}>
       <div class="absolute inset-0 bg-[#08090b] overflow-hidden pointer-events-none">
