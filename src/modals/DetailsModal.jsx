@@ -94,6 +94,9 @@ export function DetailsModal(props) {
   const currentSeasonNumber  = createMemo(() => parseInt(form().season  || movie()?.season  || 1) || 1);
   const currentEpisodeNumber = createMemo(() => parseInt(form().episode || movie()?.episode || 1) || 1);
 
+  // 🚀 MOVED UP: isCompleted must be defined before passing it to useEpisodeTracking
+  const isCompleted = createMemo(() => !isPreview() && (form().status || movie()?.status) === 'Completed');
+
   const {
     primePlaybackProgress, handlePlayerMessages, hydrateSessionProgressFromElapsed, saveProgressToDb,
   } = useWatchProgress({
@@ -103,14 +106,14 @@ export function DetailsModal(props) {
     currentSeasonNumber, currentEpisodeNumber, inferDurationSeconds, showToast: props.showToast,
   });
 
-    const {
+  const {
     selectedSeason, setSelectedSeason, seasonEpisodes, seasonsLoading, expandedEpisodes, setExpandedEpisodes,
     watchedEpisodes, tvSeasons, selectedSeasonEpisodes, episodeDocId, getEpisodesForSeason,
-    loadWatchedEpisodes, fetchSeasonEpisodes, toggleEpisodeWatched, checkIfWatched // 🚀 FETCH checkIfWatched
+    loadWatchedEpisodes, fetchSeasonEpisodes, toggleEpisodeWatched, checkIfWatched 
   } = useEpisodeTracking({
     movie, details, isPreview, isGuest: props.isGuest, uid: props.uid, activeServer, inferDurationSeconds,
     setForm, setWatchProgress, setPlayerStartProgress, showToast: props.showToast, onLogin: props.onLogin,
-    currentSeasonNumber, currentEpisodeNumber, isCompleted // 🚀 PASS NEW POINTERS
+    currentSeasonNumber, currentEpisodeNumber, isCompleted
   });
 
 
@@ -123,7 +126,6 @@ export function DetailsModal(props) {
     );
   };
 
-  // ✅ ONLY PULLS FROM USER DB - NO DEFAULTS HARDCODED
   const availableServers = createMemo(() => {
     const custom = customServers();
     return Object.keys(custom).filter(key => custom[key].enabled !== false).map(key => ({
@@ -225,8 +227,6 @@ export function DetailsModal(props) {
   const allAvailablePlatforms = createMemo(() =>
     [...new Set((props.watchlist || []).flatMap(m => getSafePlatforms(m)))].filter(Boolean).sort()
   );
-
-  const isCompleted = createMemo(() => !isPreview() && (form().status || movie()?.status) === 'Completed');
 
   const progressPct = createMemo(() => {
     if (isCompleted()) return 100;
@@ -385,10 +385,9 @@ export function DetailsModal(props) {
                       setExpandedEpisodes={setExpandedEpisodes} toggleEpisodeWatched={toggleEpisodeWatched}
                       isCompleted={isCompleted()} currentSeasonNumber={currentSeasonNumber()} currentEpisodeNumber={currentEpisodeNumber()}
                       progressPct={progressPct()} getCurrentEpisode={getCurrentEpisode}
-                      checkIfWatched={checkIfWatched} // 🚀 PASS THIS HELPER
+                      checkIfWatched={checkIfWatched}
                     />
                   </Show>
-
 
                   <CastCrewList credits={details().credits} setPersonId={setPersonId} />
 
