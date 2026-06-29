@@ -294,32 +294,22 @@ export function DetailsModal(props) {
     } catch { if (props.showToast) props.showToast("Error adding to vault."); }
   };
 
-  // ✅ FIX: Smart Similar Click — Vault check karo pehle
   const handleSimilarClick = (item) => {
     const normalizedItem = {
       ...item,
       media_type: item.media_type || (movie().media_type === 'tv' ? 'tv' : 'movie')
     };
-
-    // Kya ye item already Vault mein hai?
     const inVault = (props.watchlist || []).some(w => String(w.id) === String(item.id));
-
     if (inVault) {
-      // Vault mein hai — normal open, saved data ke saath
       setOverrideItem(null);
-      // baseId change karne ke liye parent se id update nahi ho sakta directly,
-      // isliye overrideItem ko Vault ka actual item set karo
       const vaultItem = props.watchlist.find(w => String(w.id) === String(item.id));
       setOverrideItem(vaultItem);
     } else {
-      // Vault mein nahi — Preview mode mein kholo (Search jaisa)
       setOverrideItem({ ...normalizedItem, _isPreviewOverride: true });
     }
-
     document.querySelector('.overflow-y-auto.hide-scrollbar.w-full')?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // ✅ FIX: overrideItem ke liye bhi isPreview correctly work kare
   const isPreviewOverride = createMemo(() => !!overrideItem()?._isPreviewOverride);
   const effectiveIsPreview = createMemo(() => isPreview() || isPreviewOverride());
 
@@ -356,23 +346,25 @@ export function DetailsModal(props) {
 
   return (
     <div class="fixed inset-0 z-[999999] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in" onClick={props.onClose}>
-      <div class="absolute inset-0 bg-[#08090b] overflow-hidden pointer-events-none">
+      {/* Vengeance Matte Void Background */}
+      <div class="absolute inset-0 bg-[#030303] overflow-hidden pointer-events-none">
         <Show when={movie()?.backdrop_path}>
-          <img src={`https://image.tmdb.org/t/p/w500${movie().backdrop_path}`} class="w-full h-full object-cover opacity-40 blur-3xl scale-125" />
+          <img src={`https://image.tmdb.org/t/p/original${movie().backdrop_path}`} class="w-full h-full object-cover opacity-[0.18] scale-110 blur-2xl filter contrast-125" />
         </Show>
-        <div class="absolute inset-0 bg-black/60"></div>
+        <div class="absolute inset-0 bg-gradient-to-t from-[#030303] via-transparent to-[#030303]/80"></div>
       </div>
 
       <Show when={movie()}>
         <div
-          class="w-full max-w-xl lg:max-w-[800px] bg-[#08090b]/80 backdrop-blur-3xl rounded-t-[2.5rem] sm:rounded-[2.5rem] overflow-hidden border border-white/10 relative max-h-[95vh] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] animate-pop-in flex flex-col"
+          class="w-full max-w-xl lg:max-w-[800px] bg-[#09090b]/90 backdrop-blur-2xl rounded-t-[2rem] sm:rounded-[2rem] overflow-hidden border border-white/5 relative max-h-[92vh] shadow-[0_0_50px_rgba(0,0,0,0.85)] animate-pop-in flex flex-col"
           onClick={e => e.stopPropagation()}
         >
+          {/* Minimal Floating Close Handle */}
           <button
             onClick={props.onClose}
-            class="absolute top-4 right-4 z-[100] bg-black/50 backdrop-blur-md border border-white/10 p-2.5 rounded-full hover:bg-black/80 active:scale-95 transition-all"
+            class="absolute top-5 right-5 z-[100] bg-neutral-900/60 backdrop-blur-md border border-white/5 p-2 rounded-full hover:bg-neutral-800 hover:border-white/20 active:scale-95 transition-all duration-300 group"
           >
-            <Icon name="close" class="text-sm text-white" />
+            <Icon name="close" class="text-xs text-neutral-400 group-hover:text-white transition-colors" />
           </button>
 
           <div class="overflow-y-auto hide-scrollbar w-full">
@@ -382,30 +374,31 @@ export function DetailsModal(props) {
               isEdit={isEdit()} setIsEdit={setIsEdit} showToast={props.showToast} onLogin={props.onLogin}
             />
 
-            <div class="px-6 md:px-8 pb-28 relative z-10">
+            <div class="px-6 md:px-10 pb-24 relative z-10 space-y-6">
               <RatingsPanel omdbData={omdbData()} movie={movie()} />
 
               <Show when={isEdit()} fallback={
-                <div class="animate-fade-in">
-                  {/* Streaming panel — sirf real Vault items ke liye */}
+                <div class="animate-fade-in space-y-6">
+                  
                   <Show when={!effectiveIsPreview()}>
-                    <StreamingPanel
-                      availableServers={availableServers()} activeServer={activeServer()} setActiveServer={setActiveServer}
-                      isEditingDirectUrl={isEditingDirectUrl()} setIsEditingDirectUrl={setIsEditingDirectUrl}
-                      directPlayUrl={directPlayUrl()} setDirectPlayUrl={setDirectPlayUrl} showToast={props.showToast}
-                      movie={movie()} inferDurationSeconds={inferDurationSeconds} setContentDuration={setContentDuration}
-                      setWatchProgress={setWatchProgress} setPlayerStartProgress={setPlayerStartProgress}
-                      setReceivedRealProgress={setReceivedRealProgress} setPlayerSessionStart={setPlayerSessionStart}
-                      setShowPlayer={setShowPlayer}
-                      uid={props.uid}
-                    />
+                    <div class="p-1 rounded-2xl bg-gradient-to-b from-white/[0.03] to-transparent border border-white/5 shadow-inner">
+                      <StreamingPanel
+                        availableServers={availableServers()} activeServer={activeServer()} setActiveServer={setActiveServer}
+                        isEditingDirectUrl={isEditingDirectUrl()} setIsEditingDirectUrl={setIsEditingDirectUrl}
+                        directPlayUrl={directPlayUrl()} setDirectPlayUrl={setDirectPlayUrl} showToast={props.showToast}
+                        movie={movie()} inferDurationSeconds={inferDurationSeconds} setContentDuration={setContentDuration}
+                        setWatchProgress={setWatchProgress} setPlayerStartProgress={setPlayerStartProgress}
+                        setReceivedRealProgress={setReceivedRealProgress} setPlayerSessionStart={setPlayerSessionStart}
+                        setShowPlayer={setShowPlayer}
+                        uid={props.uid}
+                      />
+                    </div>
                   </Show>
 
-                  <p class="text-gray-400 text-sm mb-6 leading-relaxed italic border-l-2 border-[var(--primary)]/30 pl-3">
+                  <p class="text-neutral-400 text-sm font-medium leading-relaxed italic border-l-2 border-neutral-700 pl-4 py-1 bg-white/[0.01] rounded-r-lg">
                     "{details().overview || (typeof movie().overview === 'string' ? movie().overview : 'No overview available.')}"
                   </p>
 
-                  {/* ✅ FIX: TV tracker — preview mein bhi dikhao (read-only mode), sirf non-preview mein full tracking */}
                   <Show when={movie().media_type === 'tv'}>
                     <TvTracker
                       movie={movie()} tvSeasons={tvSeasons()} selectedSeason={selectedSeason()} setSelectedSeason={setSelectedSeason}
@@ -429,19 +422,17 @@ export function DetailsModal(props) {
                     calculateDays={calculateDays}
                   />
 
-                  {/* Add to Vault button — preview mode mein dikhao */}
                   <Show when={effectiveIsPreview()}>
                     <button
                       onClick={addToVaultFromPreview}
-                      class="w-full mt-6 font-black py-4 px-5 rounded-xl text-xs uppercase tracking-widest active:scale-95 transition-transform flex items-center justify-center gap-2 border"
-                      style="background: var(--p); color: #05060a; border-color: var(--p); box-shadow: 0 0 24px var(--p-glow); min-height: 52px;"
+                      class="w-full mt-4 font-black py-4 px-6 rounded-xl text-xs uppercase tracking-[0.18em] active:scale-[0.98] transition-all duration-300 flex items-center justify-center gap-2 border border-neutral-800 bg-white text-black hover:bg-neutral-200 shadow-[0_4px_24px_rgba(255,255,255,0.06)]"
                     >
-                      <Icon name="add_circle" class="text-lg" /> Add to My Universe
+                      <Icon name="add_circle" class="text-base" /> Add to My Universe
                     </button>
                   </Show>
 
                   <Show when={!effectiveIsPreview()}>
-                    <div class="mt-8 flex justify-end">
+                    <div class="mt-6 pt-4 border-t border-white/5 flex justify-center">
                       <button
                         onClick={async () => {
                           if (props.isGuest) { if (props.showToast) props.showToast("Sign in to edit vault! 🔒"); if (props.onLogin) props.onLogin(); return; }
@@ -451,7 +442,7 @@ export function DetailsModal(props) {
                             props.onClose();
                           }
                         }}
-                        class="text-red-500/50 hover:text-red-500 text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition-colors mx-auto active:scale-95"
+                        class="text-red-500/40 hover:text-red-400 text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-1.5 transition-colors active:scale-95 py-2 px-4 rounded-lg hover:bg-red-500/5"
                       >
                         <Icon name="delete" class="text-sm" /> Remove from Universe
                       </button>
@@ -471,9 +462,9 @@ export function DetailsModal(props) {
 
       {/* Fullscreen Player Modal */}
       <Show when={showPlayer()}>
-        <div class="fixed inset-0 bg-black z-[10000000] flex flex-col animate-fade-in" onClick={e => e.stopPropagation()}>
-          <div class="p-4 flex justify-between items-center bg-[#0c0e14] border-b border-white/5 shadow-xl">
-            <div class="flex items-center gap-3 overflow-hidden pr-2 flex-1">
+        <div class="fixed inset-0 bg-[#030303] z-[10000000] flex flex-col animate-fade-in" onClick={e => e.stopPropagation()}>
+          <div class="p-4 flex justify-between items-center bg-[#09090b] border-b border-white/5 shadow-[0_4px_30px_rgba(0,0,0,0.5)]">
+            <div class="flex items-center gap-4 overflow-hidden pr-2 flex-1">
               <button
                 type="button"
                 onClick={(e) => {
@@ -484,26 +475,26 @@ export function DetailsModal(props) {
                   setPlayerStartProgress(0);
                   setShowPlayer(false);
                 }}
-                class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all shrink-0"
+                class="p-2.5 bg-neutral-900 border border-white/5 hover:bg-neutral-800 text-neutral-400 hover:text-white rounded-full active:scale-95 transition-all"
               >
-                <Icon name="arrow_back" class="text-sm" />
+                <Icon name="arrow_back" class="text-xs" />
               </button>
-              <h3 class="font-bold text-sm text-white truncate max-w-[150px]">{movie().title || movie().name}</h3>
+              <h3 class="font-black text-xs text-white uppercase tracking-widest truncate max-w-[200px]">{movie().title || movie().name}</h3>
             </div>
             <div class="flex gap-2 shrink-0">
-              <div class="relative bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 flex items-center gap-1 hover:bg-white/10 transition-colors">
-                <Icon name="router" class="text-gray-400 text-[14px]" />
+              <div class="relative bg-neutral-900 border border-white/5 rounded-xl px-3 py-2 flex items-center gap-1.5 hover:border-white/20 transition-all shadow-inner">
+                <Icon name="router" class="text-neutral-500 text-[13px]" />
                 <select
                   value={activeServer()}
                   onChange={(e) => { e.stopPropagation(); setActiveServer(e.target.value); }}
-                  class="bg-transparent text-[10px] font-black uppercase tracking-widest text-[var(--primary)] outline-none appearance-none cursor-pointer pr-4 pl-1"
+                  class="bg-transparent text-[9px] font-black uppercase tracking-widest text-neutral-300 outline-none appearance-none cursor-pointer pr-5 pl-0.5"
                 >
                   <For each={availableServers()}>
-                    {(srv) => <option value={srv.id} class="bg-[#0c0e14] text-white">{srv.name}</option>}
+                    {(srv) => <option value={srv.id} class="bg-[#09090b] text-neutral-300">{srv.name}</option>}
                   </For>
-                  <option value="DIRECT_PLAY" class="bg-[#0c0e14] text-[#3b82f6]">DIRECT PLAY</option>
+                  <option value="DIRECT_PLAY" class="bg-[#09090b] text-blue-400 font-bold">DIRECT PLAY</option>
                 </select>
-                <Icon name="expand_more" class="text-gray-400 text-[14px] absolute right-1 pointer-events-none" />
+                <Icon name="expand_more" class="text-neutral-500 text-[12px] absolute right-2.5 pointer-events-none" />
               </div>
             </div>
           </div>
