@@ -58,6 +58,9 @@ export function DetailsModal(props) {
   const [directPlayUrl,       setDirectPlayUrl]       = createSignal('');
   const [isEditingDirectUrl,  setIsEditingDirectUrl]  = createSignal(false);
 
+  // ✅ New: ref for fullscreen player wrapper (for landscape orientation lock)
+  let playerWrapperRef;
+
   const [form, setForm] = createSignal({
     status: '', rating: '', watchDate: '', notes: '',
     region: '', season: 1, episode: 1, tag: '',
@@ -307,8 +310,6 @@ export function DetailsModal(props) {
     if (inVault) {
       // Vault mein hai — normal open, saved data ke saath
       setOverrideItem(null);
-      // baseId change karne ke liye parent se id update nahi ho sakta directly,
-      // isliye overrideItem ko Vault ka actual item set karo
       const vaultItem = props.watchlist.find(w => String(w.id) === String(item.id));
       setOverrideItem(vaultItem);
     } else {
@@ -352,6 +353,50 @@ export function DetailsModal(props) {
       .replace(/\{season\}|\[SEASON\]/gi, s)
       .replace(/\{episode\}|\[EPISODE\]/gi, e)
       + timeParam;
+  };
+
+  // ✅ New: Fullscreen + Landscape orientation lock jab player open ho
+  createEffect(() => {
+    if (showPlayer() && playerWrapperRef) {
+      const tryFullscreenLandscape = async () => {
+        try {
+          if (playerWrapperRef.requestFullscreen) {
+            await playerWrapperRef.requestFullscreen();
+          } else if (playerWrapperRef.webkitRequestFullscreen) {
+            await playerWrapperRef.webkitRequestFullscreen();
+          }
+        } catch (e) {
+          // Fullscreen request fail ho sakta hai (user gesture required ya unsupported)
+        }
+        try {
+          if (screen.orientation?.lock) {
+            await screen.orientation.lock('landscape');
+          }
+        } catch (e) {
+          // Orientation lock fail ho sakta hai agar fullscreen na mila ho ya browser support na kare
+        }
+      };
+      tryFullscreenLandscape();
+    }
+  });
+
+  // ✅ New: Player close hone par fullscreen exit + orientation unlock
+  const closePlayer = async () => {
+    hydrateSessionProgressFromElapsed();
+    saveProgressToDb();
+    setPlayerSessionStart(null);
+    setPlayerStartProgress(0);
+    setShowPlayer(false);
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else if (document.webkitFullscreenElement) {
+        await document.webkitExitFullscreen();
+      }
+    } catch (e) {}
+    try {
+      screen.orientation?.unlock?.();
+    } catch (e) {}
   };
 
   return (
@@ -471,18 +516,18 @@ export function DetailsModal(props) {
 
       {/* Fullscreen Player Modal */}
       <Show when={showPlayer()}>
-        <div class="fixed inset-0 bg-black z-[10000000] flex flex-col animate-fade-in" onClick={e => e.stopPropagation()}>
+        <div
+          ref={playerWrapperRef}
+          class="fixed inset-0 bg-black z-[10000000] flex flex-col animate-fade-in"
+          onClick={e => e.stopPropagation()}
+        >
           <div class="p-4 flex justify-between items-center bg-[#0c0e14] border-b border-white/5 shadow-xl">
             <div class="flex items-center gap-3 overflow-hidden pr-2 flex-1">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  hydrateSessionProgressFromElapsed();
-                  saveProgressToDb();
-                  setPlayerSessionStart(null);
-                  setPlayerStartProgress(0);
-                  setShowPlayer(false);
+                  closePlayer();
                 }}
                 class="p-2 bg-white/5 hover:bg-white/10 rounded-full active:scale-95 transition-all shrink-0"
               >
