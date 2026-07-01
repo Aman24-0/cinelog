@@ -1,7 +1,6 @@
 import { Show, For } from 'solid-js';
 import { SafeInfoRow, Icon } from '../../utils';
 
-// ✅ New: Budget/Revenue ko readable currency format mein convert karo (e.g. "$325 million", "$2.05 billion")
 const formatMoney = (amount) => {
   if (!amount || amount <= 0) return null;
   if (amount >= 1_000_000_000) {
@@ -16,10 +15,17 @@ const formatMoney = (amount) => {
 };
 
 export function InfoGrid(props) {
-  // ✅ New: sirf movies ke liye (TV shows mein budget/revenue nahi hota TMDB pe)
   const isMovie = () => props.movie?.media_type !== 'tv';
   const budgetText = () => formatMoney(props.details?.budget);
   const revenueText = () => formatMoney(props.details?.revenue);
+
+  // 🚀 FIX: Extract OTT Release Date if it's a movie
+  const getOttDate = () => {
+    if (!isMovie() || !props.details?.release_dates?.results) return null;
+    const regionData = props.details.release_dates.results.find(r => r.iso_3166_1 === 'IN') || props.details.release_dates.results.find(r => r.iso_3166_1 === 'US') || props.details.release_dates.results[0];
+    const digital = regionData?.release_dates?.find(r => r.type === 4);
+    return digital ? new Date(digital.release_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
+  };
 
   return (
     <div class="glass-surface p-5 rounded-2xl space-y-4 border border-white/5">
@@ -32,12 +38,34 @@ export function InfoGrid(props) {
         <Show when={!props.isPreview}><SafeInfoRow icon="public" label="Region" value={props.movie?.region || 'International'} /></Show>
         <SafeInfoRow icon="format_list_bulleted" label="Genre" value={<span class="text-xs text-gray-300">{props.genresText}</span>} />
 
-        {/* ✅ New: Budget & Box Office — sirf movies ke liye, aur sirf jab data available ho */}
+        {/* 🚀 FIX: Original + Dubbed Language Row */}
+        <Show when={props.details?.original_language}>
+            <SafeInfoRow icon="language" label="Languages" value={
+                <div class="flex flex-col gap-1 mt-0.5">
+                    <span class="text-xs text-gray-200 flex items-center gap-2">
+                        <span class="text-[9px] bg-white/10 px-1.5 py-0.5 rounded uppercase tracking-widest font-black text-gray-400">Orig</span>
+                        {props.details.original_language.toUpperCase()}
+                    </span>
+                    <Show when={props.details?.spoken_languages?.length > 0 && props.details.spoken_languages.some(l => l.iso_639_1 !== props.details.original_language)}>
+                        <span class="text-[11px] text-gray-400 font-bold flex items-start gap-2 leading-tight">
+                            <span class="text-[9px] bg-[var(--primary)]/10 text-[var(--primary)] border border-[var(--primary)]/20 px-1.5 py-0.5 rounded uppercase tracking-widest font-black mt-0.5">Dub</span>
+                            <span class="flex-1">{props.details.spoken_languages.filter(l => l.iso_639_1 !== props.details.original_language).map(l => l.english_name || l.name).join(', ')}</span>
+                        </span>
+                    </Show>
+                </div>
+            } />
+        </Show>
+
         <Show when={isMovie() && budgetText()}>
             <SafeInfoRow icon="payments" label="Budget" value={<span class="text-xs font-bold text-gray-300">{budgetText()}</span>} />
         </Show>
         <Show when={isMovie() && revenueText()}>
             <SafeInfoRow icon="trending_up" label="Box Office" value={<span class="text-xs font-bold text-gray-300">{revenueText()}</span>} />
+        </Show>
+
+        {/* 🚀 FIX: OTT Release Track inside Vault */}
+        <Show when={getOttDate()}>
+            <SafeInfoRow icon="cloud_download" label="Digital/OTT" value={<span class="text-xs font-bold text-[var(--primary)]">{getOttDate()}</span>} />
         </Show>
         
         <SafeInfoRow icon="connected_tv" label="Available On" value={
