@@ -63,7 +63,8 @@ export function useTmdbDetails(movie, { uid, isGuest, isPreview, setForm, setCon
   createEffect(() => {
     const item = movie();
     if (!item?.id) return;
-    fetch(`https://api.themoviedb.org/3/${item.media_type || 'movie'}/${item.id}?api_key=${TMDB_KEY}&append_to_response=videos,credits`)
+    // 🚀 FIX: Added release_dates to append_to_response for OTT tracking
+    fetch(`https://api.themoviedb.org/3/${item.media_type || 'movie'}/${item.id}?api_key=${TMDB_KEY}&append_to_response=videos,credits,release_dates`)
       .then(r => r.json())
       .then(async d => {
         setDetails(d);
