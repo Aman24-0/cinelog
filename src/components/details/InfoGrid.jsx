@@ -19,14 +19,6 @@ export function InfoGrid(props) {
   const budgetText = () => formatMoney(props.details?.budget);
   const revenueText = () => formatMoney(props.details?.revenue);
 
-  // 🚀 FIX: Extract OTT Release Date if it's a movie
-  const getOttDate = () => {
-    if (!isMovie() || !props.details?.release_dates?.results) return null;
-    const regionData = props.details.release_dates.results.find(r => r.iso_3166_1 === 'IN') || props.details.release_dates.results.find(r => r.iso_3166_1 === 'US') || props.details.release_dates.results[0];
-    const digital = regionData?.release_dates?.find(r => r.type === 4);
-    return digital ? new Date(digital.release_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
-  };
-
   return (
     <div class="glass-surface p-5 rounded-2xl space-y-4 border border-white/5">
         <Show when={!props.isPreview}><SafeInfoRow icon="adjust" label="Status" value={<span class="text-[var(--primary)] font-black uppercase text-[10px] tracking-widest">{props.movie?.status||'Planned'}</span>} /></Show>
@@ -38,7 +30,6 @@ export function InfoGrid(props) {
         <Show when={!props.isPreview}><SafeInfoRow icon="public" label="Region" value={props.movie?.region || 'International'} /></Show>
         <SafeInfoRow icon="format_list_bulleted" label="Genre" value={<span class="text-xs text-gray-300">{props.genresText}</span>} />
 
-        {/* 🚀 FIX: Original + Dubbed Language Row */}
         <Show when={props.details?.original_language}>
             <SafeInfoRow icon="language" label="Languages" value={
                 <div class="flex flex-col gap-1 mt-0.5">
@@ -63,11 +54,6 @@ export function InfoGrid(props) {
             <SafeInfoRow icon="trending_up" label="Box Office" value={<span class="text-xs font-bold text-gray-300">{revenueText()}</span>} />
         </Show>
 
-        {/* 🚀 FIX: OTT Release Track inside Vault */}
-        <Show when={getOttDate()}>
-            <SafeInfoRow icon="cloud_download" label="Digital/OTT" value={<span class="text-xs font-bold text-[var(--primary)]">{getOttDate()}</span>} />
-        </Show>
-        
         <SafeInfoRow icon="connected_tv" label="Available On" value={
             <Show when={props.richPlatforms?.length > 0} fallback={<span class="text-xs font-bold text-gray-500">-</span>}>
                 <div class="flex flex-wrap gap-2 mt-1">
